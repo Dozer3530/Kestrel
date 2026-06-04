@@ -80,27 +80,6 @@ Drop your artwork into [`assets/`](assets/) and it's picked up automatically —
 - `assets/logo.png` → app header + README + window/taskbar icon
 - `assets/icon.ico` → preferred Windows window/taskbar icon (takes priority)
 
-## Tests
-
-Self-contained — they generate fixtures at runtime, so no sample data is required:
-
-```
-py tests\test_inspector.py
-```
-
-## How it works
-
-| Piece | Role |
-| --- | --- |
-| `kestrel/inspector.py` | Reads metadata (pyogrio / rasterio), derives CRS/UTM details (pyproj), reprojects the extent to WGS84 |
-| `kestrel/diagnostics.py` | The "why won't it draw" checks |
-| `kestrel/textreport.py` | Plain-text report (CLI + the GUI's *Copy report*) |
-| `kestrel/models.py` | Dataclasses describing the result |
-| `gui.py` | PySide6 drag-and-drop window |
-| `cli.py` | Terminal entry point |
-
-Metadata is read **without loading geometry**, so inspection is fast even on large datasets.
-
 ## License
 
 [MIT](LICENSE) © 2026 Dozer3530
