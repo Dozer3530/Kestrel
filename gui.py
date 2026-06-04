@@ -18,7 +18,9 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PySide6.QtCore import Qt, QObject, QRunnable, QThreadPool, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QIcon, QPixmap
+from PySide6.QtGui import (
+    QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QPalette, QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QLabel, QMainWindow, QPushButton, QScrollArea, QVBoxLayout, QWidget,
@@ -412,9 +414,29 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
 
+def apply_theme(app):
+    """Force a consistent light theme so the app looks the same regardless of the
+    OS dark/light setting (the cards and drop zone are designed for a light backdrop)."""
+    app.setStyle("Fusion")
+    pal = QPalette()
+    pal.setColor(QPalette.Window, QColor("#eef1f4"))
+    pal.setColor(QPalette.WindowText, QColor("#1c2833"))
+    pal.setColor(QPalette.Base, QColor("#ffffff"))
+    pal.setColor(QPalette.AlternateBase, QColor("#f4f6f8"))
+    pal.setColor(QPalette.Text, QColor("#1c2833"))
+    pal.setColor(QPalette.Button, QColor("#e3e8ec"))
+    pal.setColor(QPalette.ButtonText, QColor("#1c2833"))
+    pal.setColor(QPalette.ToolTipBase, QColor("#ffffff"))
+    pal.setColor(QPalette.ToolTipText, QColor("#1c2833"))
+    pal.setColor(QPalette.Highlight, QColor("#2980b9"))
+    pal.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+    app.setPalette(pal)
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    apply_theme(app)
     icon = _icon_path()
     if icon:
         app.setWindowIcon(QIcon(icon))

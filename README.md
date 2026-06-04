@@ -1,7 +1,6 @@
 <div align="center">
 
-<!-- Drop assets/logo.png here and it shows up below (and in the app header + window icon). -->
-<img src="assets/logo.png" alt="Kestrel" height="120" onerror="this.style.display='none'">
+<img src="assets/logo.png" alt="Kestrel" width="150">
 
 # Kestrel
 
@@ -15,6 +14,10 @@ list of warnings explaining **why a layer might not be drawing correctly in QGIS
 
 Built for the moment when you drag a file into QGIS and… nothing shows up. Drop it on Kestrel
 first and find out why.
+
+<div align="center">
+<img src="assets/screenshot.png" alt="Kestrel inspecting a GeoPackage in UTM zone 11N" width="540">
+</div>
 
 ## What it tells you
 
