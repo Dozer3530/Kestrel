@@ -468,6 +468,30 @@ def _selftest():
         lon, lat = Transformer.from_crs(32611, 4326, always_xy=True).transform(500000, 5650000)
         lines.append("transform 500000,5650000 -> lat %.4f lon %.4f" % (lat, lon))
         assert 50 < lat < 52 and -118 < lon < -116
+
+        from kestrel.inspector import inspect_path
+
+        # Vector read path (pyogrio reading a GeoJSON).
+        gj = os.path.join(tempfile.gettempdir(), "kestrel_selftest.geojson")
+        with open(gj, "w", encoding="utf-8") as fh:
+            fh.write('{"type":"FeatureCollection","features":[{"type":"Feature",'
+                     '"properties":{},"geometry":{"type":"Point","coordinates":[-114.0,51.0]}}]}')
+        vrep = inspect_path(gj)
+        assert vrep.is_vector and vrep.layers and vrep.layers[0].feature_count == 1
+        lines.append("vector read OK (geojson, %d feature)" % vrep.layers[0].feature_count)
+
+        # Raster read path (rasterio writes + inspects a tiny GeoTIFF).
+        import numpy as np
+        from rasterio.transform import from_origin
+        tif = os.path.join(tempfile.gettempdir(), "kestrel_selftest.tif")
+        with rasterio.open(tif, "w", driver="GTiff", height=4, width=4, count=1,
+                           dtype="uint8", crs="EPSG:32611",
+                           transform=from_origin(500000, 5660000, 30, 30)) as dst:
+            dst.write(np.arange(16, dtype="uint8").reshape(4, 4), 1)
+        rrep = inspect_path(tif)
+        assert rrep.is_raster and rrep.raster.crs.utm_zone == "11N"
+        lines.append("raster read OK (geotiff, %dx%d, UTM %s)"
+                     % (rrep.raster.width, rrep.raster.height, rrep.raster.crs.utm_zone))
     except Exception:
         ok = False
         lines.append("ERROR:\n" + traceback.format_exc())

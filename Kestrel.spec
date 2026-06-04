@@ -28,6 +28,9 @@ excludes = [
     "geopandas", "fiona", "matplotlib", "tkinter",
     "PyQt5", "PyQt6", "PySide2", "IPython", "jupyter",
     "notebook", "pytest", "sphinx",
+    # Optional rasterio deps Kestrel never uses — ~95 MB of dead weight.
+    "scipy", "PIL", "Pillow",
+    "botocore", "boto3", "s3transfer", "awscrt", "jmespath",
 ]
 
 a = Analysis(
