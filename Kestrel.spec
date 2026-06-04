@@ -1,0 +1,67 @@
+# -*- mode: python ; coding: utf-8 -*-
+# PyInstaller spec for Kestrel — builds a single windowed Kestrel.exe.
+#
+#   py -m PyInstaller Kestrel.spec      (or run build.bat)
+#
+# Output: dist\Kestrel.exe
+
+from PyInstaller.utils.hooks import collect_all
+
+datas = [("assets", "assets")]
+binaries = []
+hiddenimports = [
+    "kestrel", "kestrel.inspector", "kestrel.diagnostics",
+    "kestrel.models", "kestrel.textreport",
+]
+
+# Pull data files (proj.db, GDAL data), native libraries, and submodules for the
+# geospatial stack so the frozen app can read CRS/UTM info and open files.
+for pkg in ("pyogrio", "pyproj", "rasterio", "shapely"):
+    d, b, h = collect_all(pkg)
+    datas += d
+    binaries += b
+    hiddenimports += h
+
+# Trim things the GUI never uses (keeps the exe smaller). NOTE: pandas must stay —
+# pyogrio imports it at load time.
+excludes = [
+    "geopandas", "fiona", "matplotlib", "tkinter",
+    "PyQt5", "PyQt6", "PySide2", "IPython", "jupyter",
+    "notebook", "pytest", "sphinx",
+]
+
+a = Analysis(
+    ["gui.py"],
+    pathex=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=excludes,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name="Kestrel",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    runtime_tmpdir=None,
+    console=False,                 # windowed app (no console)
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon="assets/icon.ico",
+)

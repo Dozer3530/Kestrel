@@ -42,22 +42,35 @@ Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON
 and **rasters** via rasterio (**GeoTIFF**, IMG, VRT, JPEG2000, …). Unknown extensions are tried
 as vector first, then raster, so most things just work.
 
-## Running it
+## Getting it
 
-This runs from source — no build step.
+### Download (recommended)
+
+Grab the latest **`Kestrel.exe`** from the [**Releases**](../../releases) page — a single
+file, no Python required. Double-click to run. (Windows may show a SmartScreen prompt for the
+unsigned exe — choose *More info → Run anyway*.)
+
+### Run from source
 
 - **GUI:** double-click **`run.bat`**, or run `py gui.py`.
   (Right-click `run.bat` → *Send to → Desktop* to make a desktop shortcut.)
 - **Command line:** `py cli.py path\to\data.gpkg` prints the same report in the terminal.
 
-### Dependencies
-
-Python 3.10+ with geopandas, pyogrio, pyproj, shapely, rasterio and PySide6. To recreate the
-environment:
+Needs Python 3.10+ and the packages in [`requirements.txt`](requirements.txt):
 
 ```
 py -m pip install -r requirements.txt
 ```
+
+### Build the .exe yourself
+
+```
+py -m pip install pyinstaller pyinstaller-hooks-contrib
+build.bat          REM  ->  dist\Kestrel.exe
+```
+
+The build recipe lives in [`Kestrel.spec`](Kestrel.spec); it bundles the GDAL/PROJ data so the
+exe is fully self-contained.
 
 ## Logo / branding
 

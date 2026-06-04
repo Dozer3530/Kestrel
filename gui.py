@@ -40,7 +40,14 @@ FILE_FILTER = (
     "*.tif *.tiff *.img *.vrt *.jp2 *.asc);;All files (*.*)"
 )
 
-ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+def _base_dir():
+    """Base directory for bundled resources — handles PyInstaller's frozen layout."""
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+ASSETS_DIR = os.path.join(_base_dir(), "assets")
 
 
 def _asset(*names):
@@ -433,7 +440,54 @@ def apply_theme(app):
     app.setPalette(pal)
 
 
+def _selftest():
+    """Validate the bundled geospatial stack (used to verify a built exe).
+
+    Writes a PASS/FAIL report to %TEMP%\\kestrel_selftest.txt and exits.
+    """
+    import tempfile
+    import traceback
+
+    log = os.path.join(tempfile.gettempdir(), "kestrel_selftest.txt")
+    lines = []
+    ok = True
+    try:
+        import pyogrio
+        lines.append("pyogrio %s  (GDAL %s)"
+                     % (pyogrio.__version__, getattr(pyogrio, "__gdal_version__", "?")))
+        import rasterio
+        lines.append("rasterio %s" % rasterio.__version__)
+        import shapely
+        lines.append("shapely %s" % shapely.__version__)
+        from pyproj import CRS, Transformer
+        crs = CRS.from_epsg(32611)            # needs proj.db
+        lines.append("CRS: %s | UTM %s | area_of_use: %s"
+                     % (crs.name, crs.utm_zone, bool(crs.area_of_use)))
+        assert crs.utm_zone == "11N"
+        assert crs.area_of_use is not None
+        lon, lat = Transformer.from_crs(32611, 4326, always_xy=True).transform(500000, 5650000)
+        lines.append("transform 500000,5650000 -> lat %.4f lon %.4f" % (lat, lon))
+        assert 50 < lat < 52 and -118 < lon < -116
+    except Exception:
+        ok = False
+        lines.append("ERROR:\n" + traceback.format_exc())
+
+    report = "SELFTEST %s\n%s\n" % ("PASS" if ok else "FAIL", "\n".join(lines))
+    try:
+        with open(log, "w", encoding="utf-8") as fh:
+            fh.write(report)
+    except Exception:
+        pass
+    try:
+        print(report)
+    except Exception:
+        pass
+    sys.exit(0 if ok else 2)
+
+
 def main():
+    if "--selftest" in sys.argv:
+        _selftest()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     apply_theme(app)
