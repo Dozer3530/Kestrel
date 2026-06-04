@@ -275,6 +275,10 @@ def _inspect_raster(path: str, file_name: str, size: Optional[int],
 def inspect_path(path) -> InspectionReport:
     """Inspect a geospatial file and return a structured :class:`InspectionReport`."""
     path = os.fspath(path)
+    # Normalize slashes / UNC form so GDAL can open the file. Network paths arrive as
+    # //server/share/x.gpkg, which GDAL mangles into /share/x.gpkg (host dropped);
+    # os.path.normpath turns it into \\server\share\x.gpkg, which GDAL opens fine.
+    path = os.path.normpath(path)
     file_name = os.path.basename(path.rstrip("/\\")) or path
     size = None
     try:
