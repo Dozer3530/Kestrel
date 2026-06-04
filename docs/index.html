@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kestrel — a sharp eye on your geospatial data</title>
+<meta name="description" content="Kestrel is a free Windows desktop tool that instantly shows a geospatial file's CRS / UTM zone, real-world location, and why a layer might not draw in QGIS. Shapefile, GeoPackage, GeoJSON, GeoTIFF.">
+<link rel="icon" href="favicon.ico">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kestrel — a sharp eye on your geospatial data">
+<meta property="og:description" content="Instantly check any geospatial file's CRS / UTM zone, location, and why it won't draw in QGIS.">
+<meta property="og:url" content="https://dozer3530.github.io/Kestrel/">
+<meta property="og:image" content="https://dozer3530.github.io/Kestrel/screenshot.png">
+<style>
+  :root{
+    --ink:#1c2833; --muted:#5a6b78; --blue:#1a5276; --blue-bright:#2980b9;
+    --teal:#117a65; --rust:#c0622e; --rust-dark:#a4501f;
+    --bg:#ffffff; --bg-soft:#eef2f5; --border:#dde4ea;
+    --radius:14px; --shadow:0 10px 30px rgba(26,82,118,.10);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6; background:var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--blue-bright); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 22px}
+
+  /* header */
+  header{position:sticky; top:0; z-index:10; background:rgba(255,255,255,.88);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--border)}
+  header .wrap{display:flex; align-items:center; gap:12px; height:62px}
+  header img{height:34px; width:auto}
+  header .name{font-weight:800; font-size:19px; color:var(--blue); letter-spacing:.2px}
+  header nav{margin-left:auto; display:flex; gap:22px; align-items:center}
+  header nav a{color:var(--muted); font-weight:600; font-size:14px}
+  header nav a:hover{color:var(--ink); text-decoration:none}
+
+  /* hero */
+  .hero{position:relative; text-align:center; padding:72px 0 64px;
+    background:radial-gradient(900px 400px at 50% -120px, #dceaf3 0%, rgba(220,234,243,0) 70%), var(--bg-soft)}
+  .hero img.logo{height:128px; width:auto; filter:drop-shadow(0 8px 18px rgba(26,82,118,.18))}
+  .hero h1{font-size:clamp(38px,6vw,60px); margin:14px 0 6px; letter-spacing:-1px; color:var(--blue)}
+  .hero .tag{font-size:clamp(17px,2.4vw,21px); color:var(--muted); margin:0 auto 8px; max-width:640px}
+  .hero .sub{color:var(--muted); max-width:600px; margin:10px auto 30px}
+  .cta{display:flex; gap:14px; justify-content:center; flex-wrap:wrap}
+  .btn{display:inline-flex; align-items:center; gap:9px; font-weight:700; font-size:16px;
+    padding:14px 26px; border-radius:12px; border:1px solid transparent; cursor:pointer; transition:.15s}
+  .btn-primary{background:var(--rust); color:#fff; box-shadow:0 8px 20px rgba(192,98,46,.30)}
+  .btn-primary:hover{background:var(--rust-dark); text-decoration:none; transform:translateY(-1px)}
+  .btn-ghost{background:#fff; color:var(--blue); border-color:var(--border)}
+  .btn-ghost:hover{border-color:var(--blue-bright); text-decoration:none}
+  .platform{margin-top:14px; font-size:13px; color:var(--muted)}
+
+  /* problem strip */
+  .strip{background:var(--blue); color:#eaf2f8; text-align:center; padding:30px 0}
+  .strip p{margin:0 auto; max-width:760px; font-size:clamp(17px,2.3vw,21px)}
+  .strip b{color:#fff}
+
+  /* sections */
+  section{padding:64px 0}
+  h2{text-align:center; font-size:clamp(26px,4vw,34px); color:var(--blue); margin:0 0 8px; letter-spacing:-.5px}
+  .lead{text-align:center; color:var(--muted); max-width:620px; margin:0 auto 40px}
+
+  .features{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:18px}
+  .card{background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:24px; box-shadow:var(--shadow)}
+  .card .ic{font-size:24px; width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    border-radius:11px; background:var(--bg-soft); margin-bottom:14px}
+  .card h3{margin:0 0 6px; font-size:18px; color:var(--ink)}
+  .card p{margin:0; color:var(--muted); font-size:15px}
+
+  /* screenshot */
+  .shot{background:var(--bg-soft)}
+  .shotframe{max-width:760px; margin:0 auto; border:1px solid var(--border); border-radius:var(--radius);
+    overflow:hidden; box-shadow:var(--shadow); background:#fff}
+  .shotframe img{display:block; width:100%; height:auto}
+
+  /* download */
+  .dl{text-align:center}
+  .steps{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px; margin:34px 0 28px; text-align:left}
+  .step{background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:22px}
+  .step .n{font-weight:800; color:var(--rust); font-size:14px; letter-spacing:.5px}
+  .step h3{margin:6px 0 4px; font-size:17px}
+  .step p{margin:0; color:var(--muted); font-size:14px}
+  .note{font-size:13px; color:var(--muted); max-width:620px; margin:0 auto}
+  .note code{background:var(--bg-soft); padding:2px 6px; border-radius:6px; font-size:12px}
+
+  /* footer */
+  footer{border-top:1px solid var(--border); padding:34px 0; color:var(--muted); font-size:14px}
+  footer .wrap{display:flex; gap:14px; align-items:center; flex-wrap:wrap; justify-content:space-between}
+  footer a{color:var(--muted); font-weight:600}
+  .disclaimer{font-size:12px; color:#90a0ac; margin-top:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <img src="logo.png" alt="Kestrel logo">
+    <span class="name">Kestrel</span>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/Dozer3530/Kestrel">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <img class="logo" src="logo.png" alt="Kestrel">
+    <h1>Kestrel</h1>
+    <p class="tag">A sharp eye on your geospatial data.</p>
+    <p class="sub">A file won't show up in QGIS — and you can't tell why. Drop it on Kestrel and
+      see its CRS, UTM zone, real-world location, and exactly what's wrong, in a second.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/Dozer3530/Kestrel/releases/latest">⬇ Download for Windows</a>
+      <a class="btn btn-ghost" href="https://github.com/Dozer3530/Kestrel">★ View on GitHub</a>
+    </div>
+    <div class="platform">Free &amp; open source (MIT) · Windows 10/11 · no install of Python required</div>
+  </div>
+</div>
+
+<div class="strip">
+  <div class="wrap">
+    <p>Most "missing" layers come down to a <b>missing or wrong CRS</b>, an <b>empty file</b>,
+       or <b>coordinates that don't match the projection</b>. Kestrel spots all of it.</p>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it tells you</h2>
+    <p class="lead">Everything you need to sanity-check a file before (or instead of) loading it in QGIS.</p>
+    <div class="features">
+      <div class="card">
+        <div class="ic">🧭</div>
+        <h3>CRS &amp; UTM zone</h3>
+        <p>Name, EPSG code, UTM zone, projected vs. geographic, units, datum — the headline answer, front and center.</p>
+      </div>
+      <div class="card">
+        <div class="ic">📍</div>
+        <h3>Real-world location</h3>
+        <p>The extent reprojected to lat/lon, so you can confirm the data actually lands where it should on Earth.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🩺</div>
+        <h3>Why it won't draw</h3>
+        <p>Missing <code style="font-size:12px">.prj</code>, CRS/coordinate mismatches, empty layers, Null Island, data outside the CRS area — flagged with fixes.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🗂️</div>
+        <h3>Vector &amp; raster</h3>
+        <p>Zipped or plain shapefiles, GeoPackage, GeoJSON, KML, and GeoTIFF and other rasters. Just drop it in.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="shot">
+  <div class="wrap">
+    <h2>See it at a glance</h2>
+    <p class="lead">Drag a file onto the window — Kestrel reads the metadata instantly, without loading the geometry.</p>
+    <div class="shotframe">
+      <img src="screenshot.png" alt="Kestrel inspecting a GeoPackage: CRS, UTM zone, location and diagnostics">
+    </div>
+  </div>
+</section>
+
+<section id="download" class="dl">
+  <div class="wrap">
+    <h2>Get Kestrel</h2>
+    <p class="lead">A free download for Windows. Pick the installer for the smoothest setup.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/Dozer3530/Kestrel/releases/latest">⬇ Download for Windows</a>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="n">STEP 1</div><h3>Download</h3><p>Grab <b>KestrelSetup.exe</b> (installer) or the portable zip from the latest release.</p></div>
+      <div class="step"><div class="n">STEP 2</div><h3>Install &amp; run</h3><p>Run the installer (no admin needed) — it adds a Start-Menu shortcut. Or unzip and run <code>Kestrel.exe</code>.</p></div>
+      <div class="step"><div class="n">STEP 3</div><h3>Drop a file</h3><p>Drag any geospatial file onto the window. That's it.</p></div>
+    </div>
+    <p class="note">The app is unsigned, so Windows SmartScreen may warn on first launch — choose
+      <b>More info → Run anyway</b>. Source and build instructions are on
+      <a href="https://github.com/Dozer3530/Kestrel">GitHub</a>.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <strong style="color:var(--blue)">Kestrel</strong> · MIT License · © 2026 Dozer3530
+      <div class="disclaimer">Not affiliated with or endorsed by QGIS. "Kestrel" refers to the bird.</div>
+    </div>
+    <div>
+      <a href="https://github.com/Dozer3530/Kestrel">GitHub</a> ·
+      <a href="https://github.com/Dozer3530/Kestrel/releases/latest">Releases</a> ·
+      <a href="https://github.com/Dozer3530/Kestrel/issues">Report an issue</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

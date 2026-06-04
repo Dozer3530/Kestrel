@@ -46,10 +46,15 @@ as vector first, then raster, so most things just work.
 
 ### Download (recommended)
 
-Grab **`Kestrel-windows.zip`** from the [**Releases**](../../releases) page (no Python
-required), unzip it anywhere, and run **`Kestrel\Kestrel.exe`**. It's a one-folder build, so it
-starts fast — about a second — with no unpacking step. (Windows may show a SmartScreen prompt
-for the unsigned exe — choose *More info → Run anyway*.)
+Get it from the **[Kestrel website](https://dozer3530.github.io/Kestrel/)**, or straight from the
+[**Releases**](../../releases) page (no Python required):
+
+- **`KestrelSetup.exe`** — installer (recommended): per-user, no admin needed; adds a Start-Menu
+  shortcut and an uninstaller.
+- **`Kestrel-windows.zip`** — portable: unzip anywhere and run `Kestrel\Kestrel.exe`.
+
+It's a one-folder build, so it starts fast (about a second) after the first launch. The app is
+unsigned, so Windows SmartScreen may warn on first launch — choose *More info → Run anyway*.
 
 ### Run from source
 
@@ -67,11 +72,12 @@ py -m pip install -r requirements.txt
 
 ```
 py -m pip install pyinstaller pyinstaller-hooks-contrib
-build.bat          REM  ->  dist\Kestrel.exe
+build.bat            REM  ->  dist\Kestrel\Kestrel.exe   (one-folder app)
+build_installer.bat  REM  ->  dist\KestrelSetup.exe      (needs Inno Setup 6)
 ```
 
-The build recipe lives in [`Kestrel.spec`](Kestrel.spec); it bundles the GDAL/PROJ data so the
-exe is fully self-contained.
+The build recipe is [`Kestrel.spec`](Kestrel.spec) (bundles the GDAL/PROJ data) and the installer
+script is [`Kestrel.iss`](Kestrel.iss).
 
 
 ## License
