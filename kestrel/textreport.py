@@ -115,7 +115,7 @@ def format_report_text(report: InspectionReport) -> str:
                 out.append(f"           -> {d.suggested_fix}")
             out.append("")
     else:
-        out.append("No problems detected. OK")
+        out.append("Looks good - no problems found.")
         out.append("")
 
     return "\n".join(out)

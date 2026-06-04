@@ -8,12 +8,13 @@
 
 </div>
 
-A tiny Windows desktop app that gives you the **basic facts about a geospatial file** at a
-glance — most importantly its **CRS / UTM zone** and its **real-world location** — plus a short
-list of warnings explaining **why a layer might not be drawing correctly in QGIS**.
+We've all had this moment: you drag a layer into QGIS and… nothing. No error, no shape on the
+map — just empty space. **Kestrel tells you why.**
 
-Built for the moment when you drag a file into QGIS and… nothing shows up. Drop it on Kestrel
-first and find out why.
+Drop a file on it and it reads back the **CRS / UTM zone**, the data's **real-world location**,
+and a plain-English list of anything that would stop it from drawing. A quick, friendly sanity
+check for the everyday *"wait, where did my layer go?"* — and it never changes your data, it
+just takes a careful look.
 
 <div align="center">
 <img src="assets/screenshot.png" alt="Kestrel inspecting a GeoPackage in UTM zone 11N" width="540">

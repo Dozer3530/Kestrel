@@ -116,9 +116,9 @@ class DropArea(QFrame):
         self.setMinimumHeight(110)
         layout = QVBoxLayout(self)
         self.label = QLabel(
-            "Drop a geospatial file here\n"
-            "zipped / plain shapefile · GeoPackage · GeoJSON · GeoTIFF · …\n\n"
-            "or click Browse"
+            "Drop a file here to check it\n"
+            "shapefile (zipped or plain) · GeoPackage · GeoJSON · GeoTIFF · …\n\n"
+            "…or click Browse"
         )
         self.label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.label)
@@ -187,7 +187,7 @@ class MainWindow(QMainWindow):
         self.drop = DropArea(self.load_path)
         root.addWidget(self.drop)
 
-        self.status = QLabel("Drop a file to inspect it.")
+        self.status = QLabel("Drop a file anywhere on this window — or click Browse — to get started.")
         self.status.setStyleSheet("color: #566573;")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
@@ -314,7 +314,7 @@ class MainWindow(QMainWindow):
             if report.diagnostics:
                 self._diagnostics_card(report.diagnostics)
             elif not report.error:
-                self._card("Diagnostics", [("Status", "No problems detected.")], accent="#1e8449")
+                self._card("Diagnostics", [("Status", "All good — nothing looks off.")], accent="#1e8449")
 
     def _card(self, title, pairs, accent="#2980b9"):
         box = QGroupBox(title)
@@ -343,7 +343,7 @@ class MainWindow(QMainWindow):
         title = prefix + "Coordinate System (CRS)"
         if not crs.defined:
             self._card(title,
-                       [("Status", "UNDEFINED / MISSING — QGIS cannot place this correctly")],
+                       [("Status", "Missing — QGIS won't know where to put this layer")],
                        accent=SEV_COLOR["error"])
             return
         pairs = [

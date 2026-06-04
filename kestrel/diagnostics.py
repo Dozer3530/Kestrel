@@ -41,7 +41,8 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
     if report.error:
         diags.append(Diagnostic(
             "error", "Could not read file", report.error,
-            "Check the file isn't corrupt and is a supported geospatial format.",
+            "Make sure the file isn't corrupted and is a format Kestrel reads "
+            "(shapefile, GeoPackage, GeoJSON, GeoTIFF, ...).",
         ))
         return diags
 
@@ -83,24 +84,25 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
         if has_prj is False:
             diags.append(Diagnostic(
                 "error", "Missing .prj (no CRS)",
-                f"The shapefile has no .prj file, so its coordinate system is unknown ({ctx}).",
-                "Assign the correct CRS in QGIS (Layer ▸ Layer CRS ▸ Set...), or add a .prj. "
-                "Until then QGIS can't place it correctly.",
+                f"This shapefile is missing its .prj file, so there's no way to tell which "
+                f"coordinate system it's in ({ctx}).",
+                "Add the matching .prj, or set the CRS in QGIS (Layer ▸ Layer CRS ▸ Set...). "
+                "Until then, QGIS can't place it correctly.",
             ))
         else:
             diags.append(Diagnostic(
                 "error", "No CRS defined",
-                f"No coordinate reference system is set on this {ctx}.",
-                "QGIS will fall back to a default (often the project CRS) and may draw the "
-                "data in the wrong spot. Assign the correct CRS.",
+                f"This {ctx} doesn't record which coordinate system it's in.",
+                "Without it, QGIS has to guess (usually your project's CRS), so the layer can "
+                "end up in the wrong place. Set the correct CRS once you know what it should be.",
             ))
 
     # --- emptiness ---
     if feature_count == 0:
         diags.append(Diagnostic(
             "warning", "Empty layer",
-            f"The {ctx} has 0 features — nothing will draw in QGIS.",
-            "Confirm the export/clip that produced this actually contained data.",
+            f"The {ctx} has 0 features, so there's nothing to draw.",
+            "Double-check the export or clip that produced it — it may have come up empty.",
         ))
     if empty:
         diags.append(Diagnostic(
@@ -114,7 +116,7 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
         diags.append(Diagnostic(
             "error", "Invalid extent",
             f"The {ctx} has no valid bounding box (empty or NaN extent).",
-            "Usually caused by empty or corrupt geometry. Re-export the data.",
+            "This usually points to empty or corrupt geometry — try re-exporting the data.",
         ))
         return
 
