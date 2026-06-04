@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for Kestrel — builds a single windowed Kestrel.exe.
+# PyInstaller spec for Kestrel — builds a one-folder windowed app (fast startup).
 #
 #   py -m PyInstaller Kestrel.spec      (or run build.bat)
 #
-# Output: dist\Kestrel.exe
+# Output: dist\Kestrel\Kestrel.exe  (distribute the whole dist\Kestrel folder, zipped)
 
 from PyInstaller.utils.hooks import collect_all
 
@@ -48,15 +48,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,         # one-folder build: binaries/data live alongside, not inside
     name="Kestrel",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     console=False,                 # windowed app (no console)
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -64,4 +62,17 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon="assets/icon.ico",
+)
+
+# One-folder (onedir) layout -> dist\Kestrel\Kestrel.exe. This runs directly from its files
+# with NO unpacking at launch, so startup is near-instant (onefile re-extracts ~179 MB every
+# time, which is slow especially with antivirus / network profiles).
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="Kestrel",
 )

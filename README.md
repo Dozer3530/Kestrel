@@ -46,9 +46,10 @@ as vector first, then raster, so most things just work.
 
 ### Download (recommended)
 
-Grab the latest **`Kestrel.exe`** from the [**Releases**](../../releases) page — a single
-file, no Python required. Double-click to run. (Windows may show a SmartScreen prompt for the
-unsigned exe — choose *More info → Run anyway*.)
+Grab **`Kestrel-windows.zip`** from the [**Releases**](../../releases) page (no Python
+required), unzip it anywhere, and run **`Kestrel\Kestrel.exe`**. It's a one-folder build, so it
+starts fast — about a second — with no unpacking step. (Windows may show a SmartScreen prompt
+for the unsigned exe — choose *More info → Run anyway*.)
 
 ### Run from source
 
