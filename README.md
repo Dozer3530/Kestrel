@@ -1,0 +1,89 @@
+<div align="center">
+
+<!-- Drop assets/logo.png here and it shows up below (and in the app header + window icon). -->
+<img src="assets/logo.png" alt="Kestrel" height="120" onerror="this.style.display='none'">
+
+# Kestrel
+
+**A sharp eye on your geospatial data.**
+
+</div>
+
+A tiny Windows desktop app that gives you the **basic facts about a geospatial file** at a
+glance — most importantly its **CRS / UTM zone** and its **real-world location** — plus a short
+list of warnings explaining **why a layer might not be drawing correctly in QGIS**.
+
+Built for the moment when you drag a file into QGIS and… nothing shows up. Drop it on Kestrel
+first and find out why.
+
+## What it tells you
+
+- **Format & driver** (Shapefile, GeoPackage, GeoJSON, GeoTIFF, …)
+- **CRS** — name, EPSG code, **UTM zone**, projected vs. geographic, units, datum, and the
+  region the CRS is valid for
+- **Location (WGS84)** — the extent reprojected to lon/lat, so you can confirm the data lands
+  where you expect on Earth
+- **Details** — geometry type, feature count and fields (vector); size, bands, data type,
+  pixel size and NoData (raster); native extent
+- **Diagnostics** — common reasons a layer won't show up in QGIS:
+  - No CRS defined / missing `.prj`
+  - Coordinates that don't match the declared CRS (e.g. lat/lon tagged as a projected CRS —
+    the classic "lands in the ocean")
+  - Empty layers, zero-area extents, "Null Island" (0, 0) coordinates
+  - Data sitting well outside the CRS's valid area
+  - Multiple layers in a GeoPackage (you may be loading the wrong one)
+
+## Supported inputs
+
+Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON**, KML/GML/GPX,
+and **rasters** via rasterio (**GeoTIFF**, IMG, VRT, JPEG2000, …). Unknown extensions are tried
+as vector first, then raster, so most things just work.
+
+## Running it
+
+This runs from source — no build step.
+
+- **GUI:** double-click **`run.bat`**, or run `py gui.py`.
+  (Right-click `run.bat` → *Send to → Desktop* to make a desktop shortcut.)
+- **Command line:** `py cli.py path\to\data.gpkg` prints the same report in the terminal.
+
+### Dependencies
+
+Python 3.10+ with geopandas, pyogrio, pyproj, shapely, rasterio and PySide6. To recreate the
+environment:
+
+```
+py -m pip install -r requirements.txt
+```
+
+## Logo / branding
+
+Drop your artwork into [`assets/`](assets/) and it's picked up automatically — no code changes:
+
+- `assets/logo.png` → app header + README + window/taskbar icon
+- `assets/icon.ico` → preferred Windows window/taskbar icon (takes priority)
+
+## Tests
+
+Self-contained — they generate fixtures at runtime, so no sample data is required:
+
+```
+py tests\test_inspector.py
+```
+
+## How it works
+
+| Piece | Role |
+| --- | --- |
+| `kestrel/inspector.py` | Reads metadata (pyogrio / rasterio), derives CRS/UTM details (pyproj), reprojects the extent to WGS84 |
+| `kestrel/diagnostics.py` | The "why won't it draw" checks |
+| `kestrel/textreport.py` | Plain-text report (CLI + the GUI's *Copy report*) |
+| `kestrel/models.py` | Dataclasses describing the result |
+| `gui.py` | PySide6 drag-and-drop window |
+| `cli.py` | Terminal entry point |
+
+Metadata is read **without loading geometry**, so inspection is fast even on large datasets.
+
+## License
+
+[MIT](LICENSE) © 2026 Dozer3530

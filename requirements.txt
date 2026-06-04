@@ -1,0 +1,9 @@
+# Kestrel dependencies.
+# These are already present in the target environment — pinned here for
+# reproducibility. Install with:  py -m pip install -r requirements.txt
+geopandas==1.1.3
+pyogrio==0.12.1
+pyproj==3.7.2
+shapely==2.1.2
+rasterio==1.5.0
+PySide6==6.11.1

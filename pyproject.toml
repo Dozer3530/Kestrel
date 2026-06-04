@@ -1,0 +1,21 @@
+[project]
+name = "kestrel"
+version = "0.1.0"
+description = "Kestrel — a sharp eye on your geospatial data; a desktop CRS/UTM sanity-checker for QGIS workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Dozer3530" }]
+keywords = ["gis", "geospatial", "crs", "utm", "qgis", "pyside6", "shapefile", "geopackage", "raster"]
+
+dependencies = [
+    "geopandas>=1.0",
+    "pyogrio>=0.8",
+    "pyproj>=3.6",
+    "shapely>=2.0",
+    "rasterio>=1.3",
+    "PySide6>=6.6",
+]
+
+# Kestrel runs from source (py gui.py / run.bat). This file documents metadata and
+# dependencies; it is not required to run the app.
