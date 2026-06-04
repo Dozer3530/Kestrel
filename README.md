@@ -73,12 +73,6 @@ build.bat          REM  ->  dist\Kestrel.exe
 The build recipe lives in [`Kestrel.spec`](Kestrel.spec); it bundles the GDAL/PROJ data so the
 exe is fully self-contained.
 
-## Logo / branding
-
-Drop your artwork into [`assets/`](assets/) and it's picked up automatically — no code changes:
-
-- `assets/logo.png` → app header + README + window/taskbar icon
-- `assets/icon.ico` → preferred Windows window/taskbar icon (takes priority)
 
 ## License
 
