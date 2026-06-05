@@ -238,10 +238,19 @@ class MainWindow(QMainWindow):
         self.status.setText(f"Inspecting:  {path}")
         self.copy_btn.setEnabled(False)
         self.folder_btn.setEnabled(False)
-        worker = InspectWorker(path)
-        worker.signals.finished.connect(self.show_report)
-        worker.signals.failed.connect(self.show_error)
-        self.pool.start(worker)
+        # Inspect on the main thread. It's fast (metadata + a small geometry sample), and it
+        # avoids calling GDAL/GEOS from a background thread — a known crash risk in frozen
+        # builds. A wait cursor keeps it feeling responsive.
+        QGuiApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+        try:
+            report = inspect_path(path)
+        except Exception:
+            QGuiApplication.restoreOverrideCursor()
+            self.show_error(traceback.format_exc())
+            return
+        QGuiApplication.restoreOverrideCursor()
+        self.show_report(report)
 
     @Slot(object)
     def show_report(self, report):
@@ -480,6 +489,18 @@ def _selftest():
         assert vrep.is_vector and vrep.layers and vrep.layers[0].feature_count == 1
         lines.append("vector read OK (geojson, %d feature)" % vrep.layers[0].feature_count)
 
+        # Geometry-validity path: a LineString triggers pyogrio.raw + shapely/GEOS is_valid,
+        # which points-only files skip. This is the bit that can crash a frozen build.
+        lgj = os.path.join(tempfile.gettempdir(), "kestrel_selftest_line.geojson")
+        with open(lgj, "w", encoding="utf-8") as fh:
+            fh.write('{"type":"FeatureCollection","features":[{"type":"Feature",'
+                     '"properties":{},"geometry":{"type":"LineString",'
+                     '"coordinates":[[-114.0,51.0],[-113.9,51.1],[-113.8,51.0]]}}]}')
+        lrep = inspect_path(lgj)
+        assert lrep.is_vector and lrep.layers
+        lines.append("geometry-validity OK (line, invalid=%s)"
+                     % lrep.layers[0].invalid_geometry_count)
+
         # Raster read path (rasterio writes + inspects a tiny GeoTIFF).
         import numpy as np
         from rasterio.transform import from_origin
@@ -509,9 +530,58 @@ def _selftest():
     sys.exit(0 if ok else 2)
 
 
+def _diag(path):
+    r"""Debug: inspect a file on the main thread, then on a worker thread; log each step
+    to %TEMP%\kestrel_diag.txt. A hard crash leaves the last successful step behind."""
+    import tempfile
+    import threading
+    import traceback
+
+    log = os.path.join(tempfile.gettempdir(), "kestrel_diag.txt")
+
+    def w(msg):
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(msg + "\n")
+
+    open(log, "w", encoding="utf-8").close()
+    w("DIAG file: " + path)
+
+    w("step 1: main-thread inspect ...")
+    try:
+        r = inspect_path(path)
+        w("  main OK: error=%s layers=%s"
+          % (r.error, [(l.geometry_type, l.invalid_geometry_count) for l in r.layers]))
+    except Exception:
+        w("  main EXC:\n" + traceback.format_exc())
+
+    w("step 2: worker-thread inspect ...")
+    out = {}
+
+    def job():
+        try:
+            out["r"] = inspect_path(path)
+        except Exception:
+            out["exc"] = traceback.format_exc()
+
+    t = threading.Thread(target=job)
+    t.start()
+    t.join()
+    if "r" in out:
+        w("  thread OK: error=%s" % out["r"].error)
+    elif "exc" in out:
+        w("  thread EXC:\n" + out["exc"])
+    else:
+        w("  thread: no result")
+
+    w("DIAG done")
+    sys.exit(0)
+
+
 def main():
     if "--selftest" in sys.argv:
         _selftest()
+    if "--diag" in sys.argv:
+        _diag(sys.argv[sys.argv.index("--diag") + 1])
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     apply_theme(app)
@@ -523,6 +593,10 @@ def main():
     app.setFont(default_font)
     window = MainWindow()
     window.show()
+    # Open a file passed on the command line (file association / "Open with" / drag-onto-exe).
+    file_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if file_args:
+        window.load_path(file_args[0])
     sys.exit(app.exec())
 
 
