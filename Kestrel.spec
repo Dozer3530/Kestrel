@@ -11,12 +11,13 @@ datas = [("assets", "assets")]
 binaries = []
 hiddenimports = [
     "kestrel", "kestrel.inspector", "kestrel.diagnostics",
-    "kestrel.models", "kestrel.textreport",
+    "kestrel.models", "kestrel.textreport", "kestrel.tabular",
 ]
 
 # Pull data files (proj.db, GDAL data), native libraries, and submodules for the
 # geospatial stack so the frozen app can read CRS/UTM info and open files.
-for pkg in ("pyogrio", "pyproj", "rasterio", "shapely"):
+# (openpyxl is for the CSV/Excel coordinate reader.)
+for pkg in ("pyogrio", "pyproj", "rasterio", "shapely", "openpyxl"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

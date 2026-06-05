@@ -153,7 +153,57 @@ def _read_layer_info(source: str, layer_name: Optional[str]) -> Tuple[LayerInfo,
         crs=crs_info,
         location=bounds_to_wgs84(bounds, crs_obj),
     )
+
+    # Lines/polygons: sample geometries and flag invalid ones. (Points can't be invalid.)
+    gt = info.get("geometry_type") or ""
+    if gt and "Point" not in gt:
+        inv, sampled, reason = _check_geometry_validity(source, layer_name)
+        layer.invalid_geometry_count = inv
+        layer.invalid_geometry_sampled = sampled
+        layer.invalid_geometry_reason = reason
+
     return layer, info.get("driver")
+
+
+def _check_geometry_validity(source, layer_name, max_features: int = 2000):
+    """Sample up to ``max_features`` geometries and count invalid ones (no geopandas).
+
+    Returns (invalid_count, sampled_count, first_reason); (None, None, None) if it can't run.
+    """
+    try:
+        import shapely
+        from pyogrio.raw import read as _raw_read
+
+        res = _raw_read(source, layer=layer_name, columns=[], read_geometry=True,
+                        max_features=max_features)
+        geom_wkb = res[2]
+        if geom_wkb is None:
+            return None, None, None
+        geoms = shapely.from_wkb(geom_wkb)
+        present = [g for g in geoms if g is not None]
+        if not present:
+            return 0, 0, None
+        valid = shapely.is_valid(present)
+        invalid_idx = [i for i, ok in enumerate(valid) if not ok]
+        reason = None
+        if invalid_idx:
+            try:
+                reason = shapely.is_valid_reason(present[invalid_idx[0]])
+            except Exception:
+                reason = None
+        return len(invalid_idx), len(present), reason
+    except Exception:
+        return None, None, None
+
+
+def _error_layer(name, exc) -> LayerInfo:
+    return LayerInfo(
+        name=str(name) if name else "(default)",
+        geometry_type=None, feature_count=None, fields=[], native_bounds=None,
+        crs=CrsInfo(defined=False),
+        location=LocationInfo(available=False, note="layer could not be read"),
+        read_error=str(exc),
+    )
 
 
 def _inspect_vector(path: str, file_name: str, size: Optional[int],
@@ -164,19 +214,27 @@ def _inspect_vector(path: str, file_name: str, size: Optional[int],
     )
     try:
         layers = pyogrio.list_layers(src)
-        if layers is None or len(layers) == 0:
-            layer, driver = _read_layer_info(src, None)
-            report.layers.append(layer)
-            report.driver = driver
-        else:
-            for row in layers:
-                layer, driver = _read_layer_info(src, row[0])
-                report.layers.append(layer)
-                report.driver = report.driver or driver
     except Exception as exc:
         return InspectionReport(
             path=path, file_name=file_name, size_bytes=size,
-            kind="vector", driver=report.driver, error=str(exc),
+            kind="vector", driver=None, error=str(exc),
+        )
+
+    layer_names = [None] if (layers is None or len(layers) == 0) else [row[0] for row in layers]
+    for lname in layer_names:
+        try:
+            layer, driver = _read_layer_info(src, lname)
+            report.layers.append(layer)
+            report.driver = report.driver or driver
+        except Exception as exc:
+            # One bad layer shouldn't sink the whole dataset — flag it and keep going.
+            report.layers.append(_error_layer(lname, exc))
+
+    # If nothing could be read, treat as fatal so the raster fallback can have a turn.
+    if report.layers and all(l.read_error for l in report.layers):
+        return InspectionReport(
+            path=path, file_name=file_name, size_bytes=size,
+            kind="vector", driver=report.driver, error=report.layers[0].read_error,
         )
 
     # Note whether a plain on-disk shapefile has its .prj sidecar.
@@ -294,7 +352,10 @@ def inspect_path(path) -> InspectionReport:
 
     ext = os.path.splitext(path)[1].lower()
 
-    if ext == ".zip":
+    from .tabular import TABLE_EXTS, inspect_table
+    if ext in TABLE_EXTS:
+        report = inspect_table(path, file_name, size, ext)
+    elif ext in (".zip", ".kmz"):
         report = _inspect_zipped(path, file_name, size)
     elif ext in RASTER_EXTS:
         report = _inspect_raster(path, file_name, size)

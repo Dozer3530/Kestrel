@@ -56,6 +56,12 @@ class LayerInfo:
     crs: CrsInfo
     location: LocationInfo
     has_prj: Optional[bool] = None   # for shapefiles: whether a .prj sidecar is present
+    read_error: Optional[str] = None         # set when this one layer failed to read
+    invalid_geometry_count: Optional[int] = None   # None = not checked; >=0 = # invalid in sample
+    invalid_geometry_sampled: Optional[int] = None # how many features were validity-checked
+    invalid_geometry_reason: Optional[str] = None  # first invalidity reason, if any
+    coord_columns: Optional[Tuple[str, str]] = None  # CSV/Excel: detected (x, y) column names
+    crs_guess: Optional[str] = None          # CSV/Excel: inferred CRS note (no CRS in the file)
 
 
 @dataclass

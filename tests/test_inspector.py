@@ -17,7 +17,7 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import geopandas as gpd
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 
 from kestrel.inspector import analyze_crs, inspect_path
 
@@ -121,6 +121,70 @@ def test_zipped_shapefile_with_prj(tmp):
     print("OK  test_zipped_shapefile_with_prj")
 
 
+def test_csv_latlon(tmp):
+    """CSV with longitude/latitude columns is detected, located, and guided."""
+    path = os.path.join(tmp, "sites.csv")
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("id,longitude,latitude\n1,-114.05,51.10\n2,-114.00,51.00\n")
+    report = inspect_path(path)
+    assert report.is_vector and report.driver == "CSV", report.error
+    layer = report.layers[0]
+    assert layer.geometry_type == "Point"
+    assert layer.feature_count == 2
+    assert layer.coord_columns == ("longitude", "latitude")
+    assert layer.location.available and 50 < layer.location.center_lat < 52
+    assert "Coordinates found" in _titles(report)
+    print("OK  test_csv_latlon")
+
+
+def test_csv_no_coords(tmp):
+    """A CSV with no recognizable coordinate columns says so."""
+    path = os.path.join(tmp, "table.csv")
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("id,name,population\n1,Calgary,1306000\n")
+    report = inspect_path(path)
+    assert "No coordinate columns found" in _titles(report), _titles(report)
+    print("OK  test_csv_no_coords")
+
+
+def test_invalid_geometry(tmp):
+    """A self-intersecting polygon is flagged as invalid geometry."""
+    path = os.path.join(tmp, "invalid.gpkg")
+    bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)])
+    gpd.GeoDataFrame({"id": [1]}, geometry=[bowtie], crs="EPSG:4326").to_file(
+        path, driver="GPKG", layer="x")
+    report = inspect_path(path)
+    assert report.layers[0].invalid_geometry_count == 1, report.layers[0].invalid_geometry_count
+    assert "Invalid geometry" in _titles(report), _titles(report)
+    print("OK  test_invalid_geometry")
+
+
+def test_mixed_crs_layers(tmp):
+    """A GeoPackage whose two layers use different CRSs is flagged."""
+    path = os.path.join(tmp, "mixed.gpkg")
+    gpd.GeoDataFrame({"id": [1]}, geometry=[Point(-114, 51)], crs="EPSG:4326").to_file(
+        path, driver="GPKG", layer="wgs84")
+    gpd.GeoDataFrame({"id": [1]}, geometry=[Point(500000, 5650000)], crs="EPSG:32611").to_file(
+        path, driver="GPKG", layer="utm")
+    report = inspect_path(path)
+    assert len(report.layers) == 2, [l.name for l in report.layers]
+    assert "Layers use different coordinate systems" in _titles(report), _titles(report)
+    print("OK  test_mixed_crs_layers")
+
+
+def test_utm_hemisphere_mismatch(tmp):
+    """Data tagged UTM 11N but sitting in the southern hemisphere is flagged."""
+    path = os.path.join(tmp, "hemi.gpkg")
+    gpd.GeoDataFrame(
+        {"id": [1, 2]},
+        geometry=[Point(500000, -1000000), Point(505000, -1010000)],  # negative northing -> south
+        crs="EPSG:32611",
+    ).to_file(path, driver="GPKG", layer="x")
+    report = inspect_path(path)
+    assert "UTM zone is the wrong hemisphere" in _titles(report), _titles(report)
+    print("OK  test_utm_hemisphere_mismatch")
+
+
 def test_analyze_crs_none():
     assert not analyze_crs(None).defined
     info = analyze_crs("EPSG:4326")
@@ -136,6 +200,11 @@ def main():
         test_zipped_shapefile_without_prj(tmp)
         test_zipped_shapefile_with_prj(tmp)
         test_unit_mismatch(tmp)
+        test_csv_latlon(tmp)
+        test_csv_no_coords(tmp)
+        test_invalid_geometry(tmp)
+        test_mixed_crs_layers(tmp)
+        test_utm_hemisphere_mismatch(tmp)
         test_analyze_crs_none()
         print("\nALL TESTS PASSED")
         return 0

@@ -34,14 +34,17 @@ just takes a careful look.
   - Coordinates that don't match the declared CRS (e.g. lat/lon tagged as a projected CRS —
     the classic "lands in the ocean")
   - Empty layers, zero-area extents, "Null Island" (0, 0) coordinates
-  - Data sitting well outside the CRS's valid area
+  - Data outside the CRS's valid area, the wrong UTM hemisphere/zone, or an extent that
+    wraps the antimeridian
+  - Invalid / self-intersecting geometry, and layers in mismatched coordinate systems
   - Multiple layers in a GeoPackage (you may be loading the wrong one)
 
 ## Supported inputs
 
-Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON**, KML/GML/GPX,
-and **rasters** via rasterio (**GeoTIFF**, IMG, VRT, JPEG2000, …). Unknown extensions are tried
-as vector first, then raster, so most things just work.
+Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON**, KML/KMZ/GML/GPX,
+**CSV / Excel** with coordinate columns (it finds the lon/lat or x/y and infers the CRS), and
+**rasters** via rasterio (**GeoTIFF**, IMG, VRT, JPEG2000, …). Unknown extensions are tried as
+vector first, then raster, so most things just work.
 
 ## Getting it
 
