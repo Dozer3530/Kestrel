@@ -17,9 +17,12 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6.QtCore import Qt, QObject, QRunnable, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    Qt, QObject, QPointF, QRectF, QRunnable, QThreadPool, QUrl, Signal, Slot,
+)
 from PySide6.QtGui import (
-    QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QPalette, QPixmap,
+    QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QPainter,
+    QPalette, QPen, QPixmap, QPolygonF,
 )
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
@@ -145,6 +148,86 @@ class DropArea(QFrame):
         urls = event.mimeData().urls()
         if urls:
             self.on_path(urls[0].toLocalFile())
+
+
+# --------------------------------------------------------------------------- #
+# Mini-map preview
+# --------------------------------------------------------------------------- #
+class MiniMap(QWidget):
+    """A tiny equirectangular world map that marks where the data sits (lon/lat).
+
+    Pure Qt drawing over a small bundled world outline (assets/world.json) — no
+    internet, no extra runtime dependencies.
+    """
+
+    _world = None  # cached list of [ [lon,lat], ... ] polygons
+
+    def __init__(self, west, south, east, north):
+        super().__init__()
+        self.box = (west, south, east, north)
+        self.setFixedHeight(200)
+
+    @classmethod
+    def _load_world(cls):
+        if cls._world is None:
+            cls._world = []
+            path = _asset("world.json")
+            if path:
+                try:
+                    import json
+                    with open(path, encoding="utf-8") as fh:
+                        cls._world = json.load(fh).get("polys", [])
+                except Exception:
+                    cls._world = []
+        return cls._world
+
+    def paintEvent(self, event):
+        w, h = self.width(), self.height()
+        map_w = min(float(w), h * 2.0)        # keep a 2:1 equirectangular panel
+        map_h = map_w / 2.0
+        ox = (w - map_w) / 2.0
+        oy = (h - map_h) / 2.0
+
+        def X(lon):
+            return ox + (lon + 180.0) / 360.0 * map_w
+
+        def Y(lat):
+            return oy + (90.0 - lat) / 180.0 * map_h
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillRect(QRectF(ox, oy, map_w, map_h), QColor("#eaf2f8"))   # ocean
+        p.setBrush(QBrush(QColor("#d7e2d0")))                          # land
+        p.setPen(QPen(QColor("#a9bfa0"), 0))
+        for poly in self._load_world():
+            p.drawPolygon(QPolygonF([QPointF(X(c[0]), Y(c[1])) for c in poly]))
+
+        # equator + prime meridian
+        p.setPen(QPen(QColor(255, 255, 255, 130), 0))
+        p.drawLine(QPointF(ox, Y(0)), QPointF(ox + map_w, Y(0)))
+        p.drawLine(QPointF(X(0), oy), QPointF(X(0), oy + map_h))
+
+        west, south, east, north = self.box
+        x0, x1, y0, y1 = X(west), X(east), Y(north), Y(south)
+        rust = QColor("#c0622e")
+        if abs(x1 - x0) < 3 and abs(y1 - y0) < 3:        # point-ish -> crosshair + dot
+            cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            p.setPen(QPen(QColor(192, 98, 46, 110), 1))
+            p.drawLine(QPointF(cx, oy), QPointF(cx, oy + map_h))
+            p.drawLine(QPointF(ox, cy), QPointF(ox + map_w, cy))
+            p.setPen(QPen(rust, 1.5))
+            p.setBrush(QBrush(QColor(192, 98, 46, 200)))
+            p.drawEllipse(QPointF(cx, cy), 4, 4)
+        else:                                            # extent -> rectangle
+            p.setPen(QPen(rust, 1.5))
+            p.setBrush(QBrush(QColor(192, 98, 46, 70)))
+            p.drawRect(QRectF(min(x0, x1), min(y0, y1),
+                              max(abs(x1 - x0), 4), max(abs(y1 - y0), 4)))
+
+        p.setPen(QPen(QColor("#cfd8dd"), 1))             # frame
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(QRectF(ox, oy, map_w, map_h))
+        p.end()
 
 
 # --------------------------------------------------------------------------- #
@@ -294,6 +377,7 @@ class MainWindow(QMainWindow):
                 prefix = f"{layer.name} — " if len(report.layers) > 1 else ""
                 self._crs_card(prefix, layer.crs)
                 self._location_card(prefix, layer.location)
+                self._map_card(prefix, layer.location)
                 pairs = [("Geometry", layer.geometry_type), ("Features", layer.feature_count)]
                 if layer.native_bounds and not _has_nan(layer.native_bounds):
                     pairs.append(("Native extent", _fmt_bounds(layer.native_bounds)))
@@ -306,6 +390,7 @@ class MainWindow(QMainWindow):
             r = report.raster
             self._crs_card("", r.crs)
             self._location_card("", r.location)
+            self._map_card("", r.location)
             pairs = [
                 ("Dimensions", f"{r.width} x {r.height} px"),
                 ("Bands", r.band_count),
@@ -382,6 +467,21 @@ class MainWindow(QMainWindow):
             ("Lat/Lon bbox",
              f"W {loc.west:.4f}   S {loc.south:.4f}   E {loc.east:.4f}   N {loc.north:.4f}"),
         ], accent="#117a65")
+
+    def _map_card(self, prefix, loc):
+        if not loc.available:
+            return
+        box = QGroupBox(prefix + "On the map")
+        box.setStyleSheet(
+            "QGroupBox { font-weight: 600; border: 1px solid #d5dbdf; border-radius: 8px;"
+            " margin-top: 10px; background: #ffffff; }"
+            " QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px;"
+            " color: #117a65; }"
+        )
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(12, 14, 12, 12)
+        lay.addWidget(MiniMap(loc.west, loc.south, loc.east, loc.north))
+        self.results_layout.addWidget(box)
 
     def _diagnostics_card(self, diagnostics):
         box = QGroupBox(f"Diagnostics ({len(diagnostics)})")
@@ -577,11 +677,53 @@ def _diag(path):
     sys.exit(0)
 
 
+_CONTEXT_EXTS = [".shp", ".gpkg", ".geojson", ".kml", ".kmz", ".gml", ".gpx",
+                 ".tif", ".tiff", ".vrt", ".img", ".fgb"]
+
+
+def _register_context_menu(remove=False):
+    """Add/remove a per-user 'Inspect with Kestrel' right-click entry for geo files.
+
+    Uses HKCU\\Software\\Classes\\SystemFileAssociations (no admin, doesn't change which
+    app owns the file type) and just calls the exe with the file — same as drag/Browse.
+    """
+    import winreg
+
+    exe = sys.executable
+    if getattr(sys, "frozen", False):
+        command = f'"{exe}" "%1"'
+    else:
+        command = f'"{exe}" "{os.path.abspath(__file__)}" "%1"'
+    icon = f"{exe},0"
+
+    for ext in _CONTEXT_EXTS:
+        base = r"Software\Classes\SystemFileAssociations\%s\shell\Kestrel" % ext
+        if remove:
+            for sub in (base + r"\command", base):
+                try:
+                    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+                except OSError:
+                    pass
+        else:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "Inspect with Kestrel")
+                winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, icon)
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\command") as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, command)
+    print(("Removed" if remove else "Registered") + " 'Inspect with Kestrel' context menu.")
+
+
 def main():
     if "--selftest" in sys.argv:
         _selftest()
     if "--diag" in sys.argv:
         _diag(sys.argv[sys.argv.index("--diag") + 1])
+    if "--register" in sys.argv:
+        _register_context_menu(remove=False)
+        return
+    if "--unregister" in sys.argv:
+        _register_context_menu(remove=True)
+        return
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     apply_theme(app)

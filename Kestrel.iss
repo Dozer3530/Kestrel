@@ -4,7 +4,7 @@
 ; Per-user install (no admin needed) so it works on locked-down machines.
 
 #define AppName "Kestrel"
-#define AppVersion "0.1.4"
+#define AppVersion "0.1.5"
 #define AppPublisher "Dozer3530"
 #define AppExe "Kestrel.exe"
 #define AppURL "https://github.com/Dozer3530/Kestrel"
@@ -40,4 +40,8 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Run]
+Filename: "{app}\{#AppExe}"; Parameters: "--register"; Flags: runhidden
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{app}\{#AppExe}"; Parameters: "--unregister"; Flags: runhidden

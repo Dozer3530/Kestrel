@@ -27,6 +27,8 @@ just takes a careful look.
   region the CRS is valid for
 - **Location (WGS84)** — the extent reprojected to lon/lat, so you can confirm the data lands
   where you expect on Earth
+- **Map preview** — a tiny offline world map marks where the data sits, so "where on Earth?" is
+  a one-second glance
 - **Details** — geometry type, feature count and fields (vector); size, bands, data type,
   pixel size and NoData (raster); native extent
 - **Diagnostics** — common reasons a layer won't show up in QGIS:
@@ -59,6 +61,10 @@ Get it from the **[Kestrel website](https://dozer3530.github.io/Kestrel/)**, or 
 
 It's a one-folder build, so it starts fast (about a second) after the first launch. The app is
 unsigned, so Windows SmartScreen may warn on first launch — choose *More info → Run anyway*.
+
+The installer also adds a **right-click → "Inspect with Kestrel"** entry for geospatial files
+(on Windows 11 it's under *Show more options*). Portable/zip users can enable it once with
+`Kestrel.exe --register` (and remove it with `--unregister`).
 
 ### Run from source
 
