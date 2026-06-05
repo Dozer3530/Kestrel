@@ -130,6 +130,22 @@ def bounds_to_wgs84(bounds, crs_obj: Optional[CRS]) -> LocationInfo:
 # --------------------------------------------------------------------------- #
 # Vector
 # --------------------------------------------------------------------------- #
+def _gdal_path(p):
+    r"""A path GDAL can open even with awkward characters (e.g. ';' in the name).
+
+    On Windows, GDAL truncates such paths at the special character; the \\?\ extended-length
+    form is passed through literally (and also lifts the 260-char limit). Applies only to
+    absolute local/UNC filesystem paths — GDAL virtual paths (/vsi...) are left alone.
+    """
+    if os.name != "nt" or not p:
+        return p
+    if p.startswith("/vsi") or p.startswith("\\\\?\\") or not os.path.isabs(p):
+        return p
+    if p.startswith("\\\\"):                 # UNC: \\server\share -> \\?\UNC\server\share
+        return "\\\\?\\UNC\\" + p.lstrip("\\")
+    return "\\\\?\\" + p                      # drive letter: C:\... -> \\?\C:\...
+
+
 def _read_layer_info(source: str, layer_name: Optional[str]) -> Tuple[LayerInfo, Optional[str]]:
     info = pyogrio.read_info(source, layer=layer_name) if layer_name else pyogrio.read_info(source)
 
@@ -209,11 +225,12 @@ def _error_layer(name, exc) -> LayerInfo:
 def _inspect_vector(path: str, file_name: str, size: Optional[int],
                     source: Optional[str] = None) -> InspectionReport:
     src = source or path
+    gsrc = _gdal_path(src)   # GDAL-safe form (handles ';' etc. and long/UNC paths)
     report = InspectionReport(
         path=path, file_name=file_name, size_bytes=size, kind="vector", driver=None,
     )
     try:
-        layers = pyogrio.list_layers(src)
+        layers = pyogrio.list_layers(gsrc)
     except Exception as exc:
         return InspectionReport(
             path=path, file_name=file_name, size_bytes=size,
@@ -223,7 +240,7 @@ def _inspect_vector(path: str, file_name: str, size: Optional[int],
     layer_names = [None] if (layers is None or len(layers) == 0) else [row[0] for row in layers]
     for lname in layer_names:
         try:
-            layer, driver = _read_layer_info(src, lname)
+            layer, driver = _read_layer_info(gsrc, lname)
             report.layers.append(layer)
             report.driver = report.driver or driver
         except Exception as exc:
@@ -297,7 +314,7 @@ def _inspect_raster(path: str, file_name: str, size: Optional[int],
             kind="raster", driver=None, error=f"rasterio unavailable: {exc}",
         )
     try:
-        with rasterio.open(src) as ds:
+        with rasterio.open(_gdal_path(src)) as ds:
             crs_info, crs_obj = _parse_crs(ds.crs.to_wkt() if ds.crs else None)
             b = ds.bounds
             bounds = (float(b.left), float(b.bottom), float(b.right), float(b.top))

@@ -185,6 +185,26 @@ def test_utm_hemisphere_mismatch(tmp):
     print("OK  test_utm_hemisphere_mismatch")
 
 
+def test_special_char_filename(tmp):
+    """A filename with ';' and ',' (which GDAL truncates) still reads via the \\?\\ fix."""
+    path = os.path.join(tmp, "AB;CD,EF.gpkg")
+    gpd.GeoDataFrame({"id": [1]}, geometry=[Point(-114, 51)], crs="EPSG:4326").to_file(
+        path, driver="GPKG", layer="pts")
+    report = inspect_path(path)
+    assert report.is_vector and not report.error, report.error
+    assert report.layers and report.layers[0].feature_count == 1
+    print("OK  test_special_char_filename")
+
+
+def test_gdal_path_helper():
+    from kestrel.inspector import _gdal_path
+    if os.name == "nt":
+        assert _gdal_path(r"C:\a;b\f.gpkg") == r"\\?\C:\a;b\f.gpkg"
+        assert _gdal_path(r"\\srv\share\f.gpkg") == r"\\?\UNC\srv\share\f.gpkg"
+        assert _gdal_path("/vsizip/x/y.shp") == "/vsizip/x/y.shp"  # virtual path untouched
+    print("OK  test_gdal_path_helper")
+
+
 def test_analyze_crs_none():
     assert not analyze_crs(None).defined
     info = analyze_crs("EPSG:4326")
@@ -205,6 +225,8 @@ def main():
         test_invalid_geometry(tmp)
         test_mixed_crs_layers(tmp)
         test_utm_hemisphere_mismatch(tmp)
+        test_special_char_filename(tmp)
+        test_gdal_path_helper()
         test_analyze_crs_none()
         print("\nALL TESTS PASSED")
         return 0
