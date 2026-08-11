@@ -18,19 +18,61 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PySide6.QtCore import (
-    Qt, QObject, QPointF, QRectF, QRunnable, QThreadPool, QUrl, Signal, Slot,
+    Qt, QObject, QPointF, QRectF, QRunnable, QSettings, QThreadPool, QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
     QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QPainter,
     QPalette, QPen, QPixmap, QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-    QLabel, QMainWindow, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QApplication, QDialog, QDialogButtonBox, QFileDialog, QFrame, QGridLayout,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
+from kestrel import repair
+from kestrel.crsguess import search_crs, suggest_crs
 from kestrel.inspector import inspect_path
 from kestrel.textreport import format_report_text
+
+# Diagnostic title -> the repair that addresses it.
+FIXABLE = {
+    "No CRS defined": repair.ASSIGN_CRS,
+    "Missing .prj (no CRS)": repair.ASSIGN_CRS,
+    "Possible CRS / coordinate mismatch": repair.ASSIGN_CRS,
+    "Eastings don't fit this UTM zone": repair.ASSIGN_CRS,
+    "UTM zone is the wrong hemisphere": repair.ASSIGN_CRS,
+    "Data outside the CRS's valid area": repair.ASSIGN_CRS,
+    "Invalid geometry": repair.FIX_GEOMETRY,
+    "Coordinates found": repair.TABLE_TO_POINTS,
+}
+FIX_LABEL = {
+    repair.ASSIGN_CRS: "Set the CRS…",
+    repair.FIX_GEOMETRY: "Fix geometry…",
+    repair.TABLE_TO_POINTS: "Make a point layer…",
+}
+
+_CONFIDENCE_COLOR = {"high": "#1e8449", "medium": "#b9770e", "low": "#7f8c8d"}
+
+
+def _settings():
+    return QSettings("Kestrel", "Kestrel")
+
+
+def _recent_crs():
+    raw = _settings().value("recent_crs", "")
+    out = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+    return out
+
+
+def _remember_crs(epsg):
+    recent = [e for e in _recent_crs() if e != epsg]
+    recent.insert(0, int(epsg))
+    _settings().setValue("recent_crs", ",".join(str(e) for e in recent[:8]))
 
 APP_NAME = "Kestrel"
 TAGLINE = "A sharp eye on your geospatial data"
@@ -151,6 +193,128 @@ class DropArea(QFrame):
 
 
 # --------------------------------------------------------------------------- #
+# CRS picker
+# --------------------------------------------------------------------------- #
+class CrsPicker(QDialog):
+    """Choose a CRS: ranked suggestions first, then a code box, then a search."""
+
+    def __init__(self, report, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose a coordinate system")
+        self.resize(620, 540)
+        self.chosen = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(8)
+
+        intro = QLabel(
+            "Kestrel can't know for certain which CRS this file is in — these are the most "
+            "likely candidates based on its coordinates and the other files beside it.")
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #566573;")
+        root.addWidget(intro)
+
+        root.addWidget(self._heading("Suggestions"))
+        self.suggestions = QListWidget()
+        self.suggestions.setMinimumHeight(150)
+        try:
+            candidates = suggest_crs(report, recent=_recent_crs())
+        except Exception:
+            candidates = []
+        if not candidates:
+            self.suggestions.addItem("No suggestions — enter a code or search below.")
+            self.suggestions.setEnabled(False)
+        for cand in candidates:
+            if not cand.epsg:                     # explanatory, not selectable
+                item = QListWidgetItem(f"ⓘ  {cand.name}\n     {cand.reason}")
+                item.setFlags(Qt.NoItemFlags)
+            else:
+                item = QListWidgetItem(
+                    f"{cand.label}\n     {cand.confidence.upper()} · {cand.reason}")
+                item.setData(Qt.UserRole, cand.epsg)
+                item.setForeground(QColor(_CONFIDENCE_COLOR.get(cand.confidence, "#1c2833")))
+            self.suggestions.addItem(item)
+        self.suggestions.itemSelectionChanged.connect(self._from_suggestion)
+        self.suggestions.itemDoubleClicked.connect(lambda *_: self._accept_if_valid())
+        root.addWidget(self.suggestions)
+
+        root.addWidget(self._heading("Or enter / search for one"))
+        row = QHBoxLayout()
+        self.query = QLineEdit()
+        self.query.setPlaceholderText("EPSG code or name — e.g. 26911, or 'NAD83 UTM 11'")
+        self.query.returnPressed.connect(self._search)
+        find = QPushButton("Search")
+        find.clicked.connect(self._search)
+        row.addWidget(self.query, 1)
+        row.addWidget(find)
+        root.addLayout(row)
+
+        self.results = QListWidget()
+        self.results.setMinimumHeight(110)
+        self.results.itemSelectionChanged.connect(self._from_result)
+        self.results.itemDoubleClicked.connect(lambda *_: self._accept_if_valid())
+        root.addWidget(self.results)
+
+        self.chosen_label = QLabel("Nothing selected yet.")
+        self.chosen_label.setWordWrap(True)
+        self.chosen_label.setStyleSheet("font-weight: 600; color: #1a5276;")
+        root.addWidget(self.chosen_label)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self._accept_if_valid)
+        self.buttons.rejected.connect(self.reject)
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
+        root.addWidget(self.buttons)
+
+        if candidates and candidates[0].epsg:
+            self.suggestions.setCurrentRow(0)
+
+    @staticmethod
+    def _heading(text):
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: 700; color: #1a5276; margin-top: 4px;")
+        return label
+
+    def _set_chosen(self, epsg, name):
+        self.chosen = epsg
+        self.chosen_label.setText(f"Selected:  EPSG:{epsg} — {name}")
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
+
+    def _from_suggestion(self):
+        item = self.suggestions.currentItem()
+        epsg = item.data(Qt.UserRole) if item else None
+        if epsg:
+            self.results.clearSelection()
+            self._set_chosen(epsg, item.text().split("—", 1)[-1].split("\n")[0].strip())
+
+    def _from_result(self):
+        item = self.results.currentItem()
+        epsg = item.data(Qt.UserRole) if item else None
+        if epsg:
+            self.suggestions.clearSelection()
+            self._set_chosen(epsg, item.text().split("—", 1)[-1].strip())
+
+    def _search(self):
+        self.results.clear()
+        try:
+            hits = search_crs(self.query.text())
+        except Exception:
+            hits = []
+        if not hits:
+            self.results.addItem("No matches.")
+            return
+        for cand in hits:
+            item = QListWidgetItem(cand.label)
+            item.setData(Qt.UserRole, cand.epsg)
+            self.results.addItem(item)
+
+    def _accept_if_valid(self):
+        if self.chosen:
+            self.accept()
+
+
+# --------------------------------------------------------------------------- #
 # Mini-map preview
 # --------------------------------------------------------------------------- #
 class MiniMap(QWidget):
@@ -255,6 +419,30 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         browse = QPushButton("Browse…")
         browse.clicked.connect(self.browse)
+
+        self.fix_btn = QPushButton("Fix / Convert  ▾")
+        self.fix_btn.setEnabled(False)
+        self.fix_btn.setToolTip("Repairs always write a new file — your original is never changed.")
+        fix_menu = QMenu(self)
+        fix_menu.addAction("Set the CRS…", lambda: self.run_repair(repair.ASSIGN_CRS))
+        fix_menu.addAction("Reproject to…", lambda: self.run_repair(repair.REPROJECT))
+        fix_menu.addAction("Fix invalid geometry",
+                           lambda: self.run_repair(repair.FIX_GEOMETRY))
+        fix_menu.addAction("Make a point layer from this table…",
+                           lambda: self.run_repair(repair.TABLE_TO_POINTS))
+        fix_menu.addSeparator()
+        for label, fmt in (("Convert to GeoPackage", "gpkg"),
+                           ("Convert to Shapefile", "shp"),
+                           ("Convert to GeoJSON", "geojson")):
+            fix_menu.addAction(label, lambda f=fmt: self.run_repair(repair.CONVERT, f))
+        self.fix_btn.setMenu(fix_menu)
+
+        self.out_btn = QPushButton("Output folder")
+        self.out_btn.clicked.connect(self.choose_output_folder)
+        saved_out = _settings().value("output_folder", "")
+        if saved_out:
+            self.out_btn.setToolTip(f"Repaired files go to: {saved_out}")
+
         self.copy_btn = QPushButton("Copy report")
         self.copy_btn.clicked.connect(self.copy_report)
         self.copy_btn.setEnabled(False)
@@ -262,7 +450,9 @@ class MainWindow(QMainWindow):
         self.folder_btn.clicked.connect(self.open_folder)
         self.folder_btn.setEnabled(False)
         top.addWidget(browse)
+        top.addWidget(self.fix_btn)
         top.addStretch(1)
+        top.addWidget(self.out_btn)
         top.addWidget(self.copy_btn)
         top.addWidget(self.folder_btn)
         root.addLayout(top)
@@ -342,6 +532,7 @@ class MainWindow(QMainWindow):
         self.status.setText(f"{report.file_name}   ·   {report.kind}{driver}")
         self.copy_btn.setEnabled(True)
         self.folder_btn.setEnabled(True)
+        self.fix_btn.setEnabled(not report.error)
         self.render(report)
 
     @Slot(str)
@@ -352,11 +543,23 @@ class MainWindow(QMainWindow):
 
     # --- rendering -------------------------------------------------------- #
     def clear_results(self):
+        # setParent(None) detaches immediately; deleteLater() alone only frees the widget
+        # once the event loop next runs, so the previous file's cards stayed painted
+        # underneath the new ones (inspection is synchronous, so that loop hasn't run yet).
         while self.results_layout.count():
             item = self.results_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.setParent(None)
                 widget.deleteLater()
+            else:
+                sub = item.layout()
+                if sub is not None:
+                    while sub.count():
+                        child = sub.takeAt(0).widget()
+                        if child is not None:
+                            child.setParent(None)
+                            child.deleteLater()
 
     def render(self, report):
         self.clear_results()
@@ -515,6 +718,19 @@ class MainWindow(QMainWindow):
                 fix.setWordWrap(True)
                 fix.setStyleSheet("color: #566573; font-style: italic; border: none; background: transparent;")
                 il.addWidget(fix)
+            operation = FIXABLE.get(d.title)
+            if operation and self.current_report is not None:
+                btn = QPushButton(FIX_LABEL.get(operation, "Fix…"))
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setStyleSheet(
+                    "QPushButton { background: #c0622e; color: white; border: none;"
+                    " padding: 6px 14px; border-radius: 6px; font-weight: 600; }"
+                    " QPushButton:hover { background: #a4501f; }")
+                btn.clicked.connect(lambda _=False, op=operation: self.run_repair(op))
+                row = QHBoxLayout()
+                row.addWidget(btn)
+                row.addStretch(1)
+                il.addLayout(row)
             layout.addWidget(item)
         self.results_layout.addWidget(box)
 
@@ -528,6 +744,103 @@ class MainWindow(QMainWindow):
         if self.current_report and self.current_report.path:
             folder = os.path.dirname(os.path.abspath(self.current_report.path))
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
+    # --- repairs ---------------------------------------------------------- #
+    def output_folder(self, ask_if_unset=True):
+        """Where fixed files are written. Chosen once, then remembered."""
+        folder = _settings().value("output_folder", "")
+        if folder and os.path.isdir(folder):
+            return folder
+        if not ask_if_unset:
+            return ""
+        QMessageBox.information(
+            self, "Choose an output folder",
+            "Kestrel never changes your original files — every fix is written as a new file.\n\n"
+            "Pick a folder for the repaired copies. It's remembered from now on "
+            "(you can change it any time with the Output folder button).")
+        return self.choose_output_folder()
+
+    def choose_output_folder(self):
+        start = _settings().value("output_folder", "") or os.path.expanduser("~")
+        folder = QFileDialog.getExistingDirectory(self, "Folder for repaired files", start)
+        if folder:
+            _settings().setValue("output_folder", folder)
+            self.out_btn.setToolTip(f"Repaired files go to: {folder}")
+        return folder
+
+    def run_repair(self, operation, target_format="gpkg"):
+        report = self.current_report
+        if report is None:
+            return
+
+        epsg = None
+        if operation in (repair.ASSIGN_CRS, repair.REPROJECT, repair.TABLE_TO_POINTS):
+            picker = CrsPicker(report, self)
+            if picker.exec() != QDialog.Accepted or not picker.chosen:
+                return
+            epsg = picker.chosen
+
+        out_dir = self.output_folder()
+        if not out_dir:
+            return
+
+        kwargs = {"epsg": epsg, "target_format": target_format}
+        plan = repair.plan_repair(report, operation, out_dir, **kwargs)
+        if not plan.ok:
+            QMessageBox.warning(self, "Can't do that yet", plan.blocker or "Repair not possible.")
+            return
+
+        detail = [plan.description, "", f"Source:  {plan.source}",
+                  f"Writes:  {plan.target}", "", "Your original file is not modified."]
+        if plan.warnings:
+            detail += ["", "Note:"] + [f"  • {w}" for w in plan.warnings]
+        confirm = QMessageBox(self)
+        confirm.setWindowTitle("Preview the fix")
+        confirm.setIcon(QMessageBox.Question)
+        confirm.setText("Apply this fix?")
+        confirm.setInformativeText("\n".join(detail))
+        confirm.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        confirm.button(QMessageBox.Ok).setText("Write the file")
+        if confirm.exec() != QMessageBox.Ok:
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+        try:
+            result = repair.apply_repair(report, plan, **kwargs)
+        except Exception:
+            QGuiApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Fix failed", traceback.format_exc())
+            return
+        QGuiApplication.restoreOverrideCursor()
+
+        if not result.ok:
+            QMessageBox.critical(self, "Fix failed",
+                                 result.message + "\n\nYour original file is untouched.")
+            return
+
+        if epsg:
+            _remember_crs(epsg)
+        lines = [result.message]
+        if result.verification:
+            lines.append(f"\nChecked the result: {result.verification}")
+        if result.warnings:
+            lines += ["", "Note:"] + [f"  • {w}" for w in result.warnings]
+
+        done = QMessageBox(self)
+        done.setWindowTitle("Fixed")
+        done.setIcon(QMessageBox.Information)
+        done.setText("Done — the repaired file is ready.")
+        done.setInformativeText("\n".join(lines) + f"\n\n{result.target}")
+        open_btn = done.addButton("Open the fixed file", QMessageBox.AcceptRole)
+        done.addButton("Show in folder", QMessageBox.ActionRole)
+        done.addButton(QMessageBox.Close)
+        done.exec()
+        clicked = done.clickedButton()
+        if clicked is open_btn:
+            self.load_path(result.target)
+        elif clicked is not None and clicked.text() == "Show in folder":
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(result.target)))
 
 
 def apply_theme(app):
