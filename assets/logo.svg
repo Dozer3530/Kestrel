@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Kestrel</title>
+
+  <!-- badge -->
+  <circle cx="128" cy="128" r="124" fill="#1a5276"/>
+  <circle cx="128" cy="128" r="106" fill="none" stroke="#3d7fa6" stroke-width="3" opacity="0.7"/>
+
+  <!-- reticle -->
+  <g stroke="#8fc0dc" stroke-width="8" stroke-linecap="round" opacity="0.8">
+    <line x1="128" y1="8" x2="128" y2="30"/>
+    <line x1="128" y1="226" x2="128" y2="248"/>
+    <line x1="8" y1="128" x2="30" y2="128"/>
+    <line x1="226" y1="128" x2="248" y2="128"/>
+  </g>
+
+  <!-- kestrel, stooping: all straight edges, because a falcon is angles not curves -->
+  <g fill="#f7f2e7">
+    <!-- left wing: swept back to a point -->
+    <polygon points="124,104 28,50 46,100 118,132"/>
+    <!-- right wing -->
+    <polygon points="132,104 228,50 210,100 138,132"/>
+    <!-- body: a tapered spindle, with a head rather than a point -->
+    <polygon points="128,62 141,88 139,146 128,166 117,146 115,88"/>
+    <circle cx="128" cy="64" r="13"/>
+  </g>
+
+  <!-- rufous tail, forked -->
+  <polygon points="117,142 139,142 133,214 128,198 123,214" fill="#c0622e"/>
+</svg>

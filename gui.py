@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
                 prefix = f"{layer.name} — " if len(report.layers) > 1 else ""
                 self._crs_card(prefix, layer.crs)
                 self._location_card(prefix, layer.location)
-                self._map_card(prefix, layer.location)
+                self._map_card(prefix, layer.location, layer.preview)
                 pairs = [("Geometry", layer.geometry_type), ("Features", layer.feature_count)]
                 if layer.native_bounds and not _has_nan(layer.native_bounds):
                     pairs.append(("Native extent", _fmt_bounds(layer.native_bounds)))
@@ -592,7 +592,7 @@ class MainWindow(QMainWindow):
              f"W {loc.west:.4f}   S {loc.south:.4f}   E {loc.east:.4f}   N {loc.north:.4f}"),
         ], accent="#117a65")
 
-    def _map_card(self, prefix, loc):
+    def _map_card(self, prefix, loc, preview=None):
         if not loc.available:
             return
         box = QGroupBox(prefix + "On the map")
@@ -606,7 +606,8 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(12, 14, 12, 12)
         lay.addWidget(MapCard(loc, ASSETS_DIR,
                               satellite=_settings().value("satellite", True, type=bool),
-                              on_toggle=lambda on: _settings().setValue("satellite", on)))
+                              on_toggle=lambda on: _settings().setValue("satellite", on),
+                              preview=preview))
         self.results_layout.addWidget(box)
 
     def _diagnostics_card(self, diagnostics):

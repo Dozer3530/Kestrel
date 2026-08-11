@@ -170,22 +170,28 @@ def _read_layer_info(source: str, layer_name: Optional[str]) -> Tuple[LayerInfo,
         location=bounds_to_wgs84(bounds, crs_obj),
     )
 
-    # Lines/polygons: sample geometries and flag invalid ones. (Points can't be invalid.)
+    # One geometry pass: validity (lines/polygons only — a point can't be invalid) plus a
+    # WGS84 preview so the map can draw the real features rather than a box around them.
     gt = info.get("geometry_type") or ""
-    if gt and "Point" not in gt:
-        inv, sampled, reason = _check_geometry_validity(source, layer_name)
-        layer.invalid_geometry_count = inv
-        layer.invalid_geometry_sampled = sampled
-        layer.invalid_geometry_reason = reason
+    if gt:
+        (inv, sampled, reason), preview = _sample_geometry(source, layer_name, crs_obj)
+        if "Point" not in gt:
+            layer.invalid_geometry_count = inv
+            layer.invalid_geometry_sampled = sampled
+            layer.invalid_geometry_reason = reason
+        layer.preview = preview
 
     return layer, info.get("driver")
 
 
-def _check_geometry_validity(source, layer_name, max_features: int = 2000):
-    """Sample up to ``max_features`` geometries and count invalid ones (no geopandas).
+def _sample_geometry(source, layer_name, crs_obj, max_features: int = 2000):
+    """One geometry read that serves two purposes.
 
-    Returns (invalid_count, sampled_count, first_reason); (None, None, None) if it can't run.
+    Returns ``((invalid_count, sampled_count, first_reason), preview)`` where preview is a
+    dict of WGS84 shapes for the map — so the map can draw the actual features instead of
+    a box around them, without paying for a second pass over the file.
     """
+    empty = (None, None, None)
     try:
         import shapely
         from pyogrio.raw import read as _raw_read
@@ -194,11 +200,12 @@ def _check_geometry_validity(source, layer_name, max_features: int = 2000):
                         max_features=max_features)
         geom_wkb = res[2]
         if geom_wkb is None:
-            return None, None, None
+            return empty, None
         geoms = shapely.from_wkb(geom_wkb)
         present = [g for g in geoms if g is not None]
         if not present:
-            return 0, 0, None
+            return (0, 0, None), None
+
         valid = shapely.is_valid(present)
         invalid_idx = [i for i, ok in enumerate(valid) if not ok]
         reason = None
@@ -207,9 +214,73 @@ def _check_geometry_validity(source, layer_name, max_features: int = 2000):
                 reason = shapely.is_valid_reason(present[invalid_idx[0]])
             except Exception:
                 reason = None
-        return len(invalid_idx), len(present), reason
+        validity = (len(invalid_idx), len(present), reason)
+        return validity, _build_preview(present, crs_obj)
     except Exception:
-        return None, None, None
+        return empty, None
+
+
+def _build_preview(geoms, crs_obj, vertex_budget: int = 12000):
+    """Reproject sampled geometry to WGS84 and thin it enough to draw quickly."""
+    try:
+        import numpy as np
+        import shapely
+
+        if crs_obj is None:
+            return None
+
+        collection = shapely.geometrycollections(np.asarray(geoms, dtype=object))
+        total = shapely.get_num_coordinates(collection)
+        if total == 0:
+            return None
+
+        geoms = np.asarray(geoms, dtype=object)
+        if total > vertex_budget:
+            # simplify first; if still heavy, drop features evenly across the sample
+            span = max(shapely.bounds(collection)[2] - shapely.bounds(collection)[0], 1e-9)
+            geoms = shapely.simplify(geoms, span / 400.0, preserve_topology=False)
+            total = int(shapely.get_num_coordinates(
+                shapely.geometrycollections(geoms)))
+            if total > vertex_budget and len(geoms) > 1:
+                step = max(1, int(total / vertex_budget))
+                geoms = geoms[::step]
+
+        if not crs_obj.is_geographic:
+            tr = Transformer.from_crs(crs_obj, 4326, always_xy=True)
+            out = []
+            for g in geoms:
+                if g is None or g.is_empty:
+                    continue
+                coords = shapely.get_coordinates(g)
+                if not len(coords):
+                    continue
+                lon, lat = tr.transform(coords[:, 0], coords[:, 1])
+                if not (np.isfinite(lon).all() and np.isfinite(lat).all()):
+                    continue
+                out.append(shapely.set_coordinates(
+                    shapely.from_wkb(shapely.to_wkb(g)),
+                    np.column_stack([lon, lat])))
+            geoms = out
+
+        points, lines, polygons = [], [], []
+        for g in geoms:
+            if g is None or g.is_empty:
+                continue
+            for part in (g.geoms if hasattr(g, "geoms") else [g]):
+                if part.is_empty:
+                    continue
+                kind = part.geom_type
+                if kind == "Point":
+                    points.append([part.x, part.y])
+                elif kind in ("LineString", "LinearRing"):
+                    lines.append([[x, y] for x, y in part.coords])
+                elif kind == "Polygon":
+                    polygons.append([[x, y] for x, y in part.exterior.coords])
+        if not (points or lines or polygons):
+            return None
+        return {"points": points, "lines": lines, "polygons": polygons}
+    except Exception:
+        return None
 
 
 def _error_layer(name, exc) -> LayerInfo:

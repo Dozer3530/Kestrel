@@ -62,6 +62,7 @@ class LayerInfo:
     invalid_geometry_reason: Optional[str] = None  # first invalidity reason, if any
     coord_columns: Optional[Tuple[str, str]] = None  # CSV/Excel: detected (x, y) column names
     crs_guess: Optional[str] = None          # CSV/Excel: inferred CRS note (no CRS in the file)
+    preview: Optional[dict] = None           # WGS84 shapes for the map: points/lines/polygons
 
 
 @dataclass

@@ -9,6 +9,6 @@ in QGIS.
 from .inspector import inspect_path, analyze_crs
 from .textreport import format_report_text
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 __all__ = ["inspect_path", "analyze_crs", "format_report_text", "__version__"]

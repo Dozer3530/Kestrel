@@ -1,5 +1,10 @@
 # Kestrel assets
 
+`logo.svg` is the source of truth for the mark — an original design (no stock artwork),
+so it's free to use and redistribute with the project. `logo.png` and `icon.ico` are
+rendered from it; regenerate them if you change the SVG.
+
+
 Drop the app artwork here. The GUI, the window/taskbar icon, and the project README pick
 these up automatically — **no code changes needed**:
 

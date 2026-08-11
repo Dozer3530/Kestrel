@@ -345,11 +345,12 @@ class ExtentView(QWidget):
     MIN_SPAN_OFFLINE = 1.1
     MIN_SPAN_SATELLITE = 0.004          # ~450 m
 
-    def __init__(self, west, south, east, north, assets_dir, satellite=False):
+    def __init__(self, west, south, east, north, assets_dir, satellite=False, preview=None):
         super().__init__()
         self.box = (west, south, east, north)
         self.assets_dir = assets_dir
         self.satellite = satellite
+        self.preview = preview
         self.setMinimumHeight(200)
 
     def set_satellite(self, on):
@@ -469,6 +470,10 @@ class ExtentView(QWidget):
         draw("admin0", QPen(QColor("#8d8578"), 1.4), Qt.NoBrush, False)
 
     def _marker(self, p, X, Y):
+        """Draw the data itself — the real features when we have them, else the extent."""
+        if self.preview and self._draw_preview(p, X, Y):
+            return
+
         west, south, east, north = self.box
         x0, x1, y0, y1 = X(west), X(east), Y(north), Y(south)
         p.setPen(QPen(RUST, 2))
@@ -482,6 +487,40 @@ class ExtentView(QWidget):
         else:
             p.setBrush(QBrush(QColor(192, 98, 46, 55)))
             p.drawRect(QRectF(min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0)))
+
+    def _draw_preview(self, p, X, Y):
+        """Render the actual features. False if there was nothing worth drawing."""
+        drew = False
+        halo = QColor(255, 255, 255, 170)
+
+        polygons = self.preview.get("polygons") or []
+        if polygons:
+            p.setPen(QPen(RUST, 2))
+            p.setBrush(QBrush(QColor(192, 98, 46, 70)))
+            for ring in polygons:
+                p.drawPolygon(QPolygonF([QPointF(X(c[0]), Y(c[1])) for c in ring]))
+            drew = True
+
+        lines = self.preview.get("lines") or []
+        if lines:
+            for width, colour in ((3.5, halo), (1.8, RUST)):
+                p.setPen(QPen(colour, width))
+                p.setBrush(Qt.NoBrush)
+                for line in lines:
+                    p.drawPolyline(QPolygonF([QPointF(X(c[0]), Y(c[1])) for c in line]))
+            drew = True
+
+        points = self.preview.get("points") or []
+        if points:
+            # size the dots to the crowd: big and clear when there are a few, small
+            # enough to still read as a pattern when there are thousands
+            r = 4.0 if len(points) <= 60 else (2.6 if len(points) <= 600 else 1.6)
+            p.setPen(QPen(halo, 1.2))
+            p.setBrush(QBrush(RUST))
+            for c in points:
+                p.drawEllipse(QPointF(X(c[0]), Y(c[1])), r, r)
+            drew = True
+        return drew
 
     def _places(self, p, w, h, X, Y, view):
         left, bottom, right, top = view
@@ -564,7 +603,7 @@ class ExtentView(QWidget):
 class MapCard(QWidget):
     """Globe on the left for orientation, zoomed extent on the right for detail."""
 
-    def __init__(self, loc, assets_dir, satellite=False, on_toggle=None):
+    def __init__(self, loc, assets_dir, satellite=False, on_toggle=None, preview=None):
         super().__init__()
         self.on_toggle = on_toggle
         row = QHBoxLayout(self)
@@ -580,7 +619,7 @@ class MapCard(QWidget):
         detail_col = QVBoxLayout()
         detail_col.setSpacing(2)
         self.extent = ExtentView(loc.west, loc.south, loc.east, loc.north,
-                                 assets_dir, satellite=satellite)
+                                 assets_dir, satellite=satellite, preview=preview)
         detail_col.addWidget(self.extent)
 
         bar = QHBoxLayout()
