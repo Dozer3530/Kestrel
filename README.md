@@ -41,6 +41,28 @@ just takes a careful look.
   - Invalid / self-intersecting geometry, and layers in mismatched coordinate systems
   - Multiple layers in a GeoPackage (you may be loading the wrong one)
 
+## …and now it can fix them
+
+Spotting the problem is half the job. Kestrel can repair the common ones for you:
+
+| Fix | What it does |
+| --- | --- |
+| **Set the CRS** | Tags a file with the coordinate system it's really in. Coordinates are not moved. |
+| **Reproject** | Transforms the coordinates into another CRS. |
+| **Fix geometry** | Repairs self-intersections and invalid rings. |
+| **Convert** | Writes the data out as GeoPackage, Shapefile or GeoJSON. |
+| **Table → points** | Turns a CSV/Excel coordinate table into a real point layer. |
+
+**Your original file is never modified.** Every repair writes a *new* file into an output
+folder you choose, and Kestrel shows you exactly what it's going to do before it writes
+anything — then re-reads the result and tells you what it actually produced.
+
+When a file has no CRS, Kestrel suggests likely candidates. Coordinates alone can't identify
+a UTM zone — the same easting/northing is valid in all 60 — so it draws on context: other
+files in the same folder that *do* declare a CRS, and the ones you've picked before. For the
+usual case (one file in a delivery lost its `.prj`) that's often the exactly-right answer.
+You can also type an EPSG code or search the EPSG database by name.
+
 ## Supported inputs
 
 Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON**, KML/KMZ/GML/GPX,

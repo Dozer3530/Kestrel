@@ -926,6 +926,33 @@ def _selftest():
         assert rrep.is_raster and rrep.raster.crs.utm_zone == "11N"
         lines.append("raster read OK (geotiff, %dx%d, UTM %s)"
                      % (rrep.raster.width, rrep.raster.height, rrep.raster.crs.utm_zone))
+
+        # Repair path: a full read -> write -> re-inspect round trip. This is the part
+        # that actually touches the user's data, so the frozen build must prove it works.
+        from kestrel import repair as _repair
+        out_dir = os.path.join(tempfile.gettempdir(), "kestrel_selftest_out")
+        plan = _repair.plan_repair(lrep, _repair.CONVERT, out_dir, target_format="gpkg")
+        assert plan.ok, "repair plan blocked: %s" % plan.blocker
+        rres = _repair.apply_repair(lrep, plan, target_format="gpkg")
+        assert rres.ok, "repair failed: %s" % rres.message
+        lines.append("repair OK (convert -> %s)" % rres.verification)
+
+        # CRS suggestion engine (needs the pyproj EPSG database to be bundled).
+        from kestrel.crsguess import search_crs as _search, suggest_crs as _suggest
+        cands = _suggest(lrep, use_siblings=False)
+        hits = _search("26911")
+        assert hits and hits[0].epsg == 26911, "EPSG database not reachable"
+        lines.append("crs suggestions OK (%d candidate(s), search resolves EPSG:26911)"
+                     % len(cands))
+
+        # Excel path (openpyxl must actually be bundled, not silently missing).
+        import openpyxl
+        lines.append("openpyxl %s present" % openpyxl.__version__)
+
+        # The mini-map asset has to ship or the map card renders empty.
+        import gui as _self
+        assert _self._asset("world.json"), "assets/world.json is missing from the build"
+        lines.append("world.json present")
     except Exception:
         ok = False
         lines.append("ERROR:\n" + traceback.format_exc())
