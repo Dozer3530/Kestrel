@@ -27,9 +27,10 @@ just takes a careful look.
   region the CRS is valid for
 - **Location (WGS84)** — the extent reprojected to lon/lat, so you can confirm the data lands
   where you expect on Earth
-- **Map preview** — a globe showing where on Earth the data sits, next to a zoomed regional view
-  with borders, lakes and town names, so "is this in the right place?" is a one-second glance
-  (fully offline — no tiles, no API keys)
+- **Map preview** — a globe showing where on Earth the data sits, next to a zoomed view of the
+  extent. Offline by default (coastlines, lakes, borders and town names, so it works with no
+  network at all); flick on **Satellite** for Esri World Imagery and zoom right in on the field.
+  No API key, and it falls back to the offline map if there's no connection.
 - **Details** — geometry type, feature count and fields (vector); size, bands, data type,
   pixel size and NoData (raster); native extent
 - **Diagnostics** — common reasons a layer won't show up in QGIS:

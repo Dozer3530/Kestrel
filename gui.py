@@ -604,7 +604,9 @@ class MainWindow(QMainWindow):
         )
         lay = QVBoxLayout(box)
         lay.setContentsMargins(12, 14, 12, 12)
-        lay.addWidget(MapCard(loc, ASSETS_DIR))
+        lay.addWidget(MapCard(loc, ASSETS_DIR,
+                              satellite=_settings().value("satellite", False, type=bool),
+                              on_toggle=lambda on: _settings().setValue("satellite", on)))
         self.results_layout.addWidget(box)
 
     def _diagnostics_card(self, diagnostics):
@@ -788,6 +790,7 @@ def _selftest():
 
     Writes a PASS/FAIL report to %TEMP%\\kestrel_selftest.txt and exits.
     """
+    import json
     import tempfile
     import traceback
 
@@ -873,7 +876,12 @@ def _selftest():
         # The mini-map asset has to ship or the map card renders empty.
         import gui as _self
         assert _self._asset("world.json"), "assets/world.json is missing from the build"
-        lines.append("world.json present")
+        world = json.load(open(_self._asset("world.json"), encoding="utf-8"))
+        lines.append("world.json present (%s)" % ", ".join(sorted(world)))
+
+        # Satellite imagery needs QtNetwork; without it the toggle would fail silently.
+        from PySide6.QtNetwork import QNetworkAccessManager   # noqa: F401
+        lines.append("QtNetwork present (satellite imagery available)")
     except Exception:
         ok = False
         lines.append("ERROR:\n" + traceback.format_exc())
