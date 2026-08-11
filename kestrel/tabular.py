@@ -6,6 +6,8 @@ work out the extent, and make a sensible guess at the CRS (lat/lon vs. projected
 
 from __future__ import annotations
 
+import codecs
+import contextlib
 import csv
 import math
 from typing import List, Optional
@@ -106,8 +108,37 @@ def _build_report(path, file_name, size, driver, layer_name,
                             kind="vector", driver=driver, layers=[layer])
 
 
-def _inspect_csv(path, file_name, size) -> InspectionReport:
-    with open(path, "r", newline="", encoding="utf-8-sig", errors="replace") as fh:
+def detect_encoding(path) -> str:
+    """Best-effort text encoding for a delimited file.
+
+    Exports from ArcGIS/Excel are often UTF-16 or cp1252; reading those as UTF-8
+    turns every header into mojibake, which used to defeat coordinate detection
+    entirely (and produced advice telling people to rename correct columns).
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4)
+    except OSError:
+        return "utf-8-sig"
+    if head.startswith(codecs.BOM_UTF16_LE) or head.startswith(codecs.BOM_UTF16_BE):
+        return "utf-16"
+    if head.startswith(codecs.BOM_UTF8):
+        return "utf-8-sig"
+    if head[:2] in (b"\xff\xfe", b"\xfe\xff") or (len(head) >= 2 and head[1:2] == b"\x00"):
+        return "utf-16"
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            fh.read(65536)
+        return "utf-8"
+    except (UnicodeDecodeError, OSError):
+        return "cp1252"
+
+
+@contextlib.contextmanager
+def _open_text_table(path):
+    """Yield ``(csv_reader, header)`` with encoding and delimiter worked out."""
+    enc = detect_encoding(path)
+    with open(path, "r", newline="", encoding=enc, errors="replace") as fh:
         sample = fh.read(8192)
         fh.seek(0)
         try:
@@ -119,6 +150,11 @@ def _inspect_csv(path, file_name, size) -> InspectionReport:
             header = next(reader)
         except StopIteration:
             header = []
+        yield reader, header
+
+
+def _inspect_csv(path, file_name, size) -> InspectionReport:
+    with _open_text_table(path) as (reader, header):
         header_norm = [_norm(h) for h in header]
         xi = _pick(header_norm, _X_NAMES)
         yi = _pick(header_norm, _Y_NAMES)

@@ -35,6 +35,20 @@ def _looks_like_lonlat(bounds) -> bool:
     )
 
 
+def _is_linear_unit(unit: str) -> bool:
+    """True for any linear ground unit (metre, foot, chain...), false for degrees.
+
+    Gating on 'metre' alone silently exempted every foot-based State Plane CRS from the
+    CRS/coordinate mismatch check.
+    """
+    u = (unit or "").lower()
+    if not u:
+        return True                      # unknown unit on a projected CRS: still check it
+    if "degree" in u or "grad" in u or "radian" in u:
+        return False
+    return True
+
+
 def _parse_utm_zone(zone):
     """'11N' -> (11, 'N'); None if not a parseable UTM zone string."""
     if not zone:
@@ -96,12 +110,15 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
                     "an unsupported geometry or encoding.",
                 ))
                 continue
+            attr_only = (layer.geometry_type is None and layer.native_bounds is None
+                         and not layer.crs.defined)
             _check(diags, layer.crs, layer.native_bounds, layer.location, ctx,
                    feature_count=layer.feature_count, has_prj=layer.has_prj,
                    geometry_type=layer.geometry_type,
                    invalid_geometry_count=layer.invalid_geometry_count,
                    invalid_geometry_sampled=layer.invalid_geometry_sampled,
-                   invalid_geometry_reason=layer.invalid_geometry_reason)
+                   invalid_geometry_reason=layer.invalid_geometry_reason,
+                   is_attribute_table=attr_only)
 
     elif report.is_raster and report.raster:
         r = report.raster
@@ -139,7 +156,18 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
            geometry_type: Optional[str] = None, empty: bool = False,
            is_table: bool = False, invalid_geometry_count: Optional[int] = None,
            invalid_geometry_sampled: Optional[int] = None,
-           invalid_geometry_reason: Optional[str] = None) -> None:
+           invalid_geometry_reason: Optional[str] = None,
+           is_attribute_table: bool = False) -> None:
+
+    # --- attribute-only table: normal inside a GeoPackage, not a fault ---
+    if is_attribute_table:
+        diags.append(Diagnostic(
+            "info", "Attribute table (no geometry)",
+            f"The {ctx} holds attributes only — no geometry column, so there's nothing to "
+            "draw. That's perfectly normal for lookup and join tables inside a GeoPackage.",
+            "Nothing to fix. QGIS lists it as a non-spatial table rather than a map layer.",
+        ))
+        return
 
     # --- CRS present? (the #1 reason a layer lands in the wrong place) ---
     if not crs.defined and not is_table:
@@ -184,11 +212,15 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
 
     xmin, ymin, xmax, ymax = bounds
 
-    if xmin == xmax and ymin == ymax:
+    # A single point legitimately has a zero-area extent — only flag it when several
+    # features somehow share one location.
+    if xmin == xmax and ymin == ymax and (feature_count is None or feature_count > 1):
         diags.append(Diagnostic(
             "warning", "Zero-area extent",
-            f"All coordinates in the {ctx} are the same point ({xmin:g}, {ymin:g}).",
-            "May be a single point, or degenerate geometry. Verify in the attribute table.",
+            f"All {feature_count if feature_count else ''} features in the {ctx} sit at the "
+            f"same point ({xmin:g}, {ymin:g}).",
+            "Usually means the coordinates were lost or overwritten on export. "
+            "Check a few rows in the attribute table.",
         ))
 
     if abs(xmin) < 1e-6 and abs(ymin) < 1e-6 and abs(xmax) < 1e-6 and abs(ymax) < 1e-6:
@@ -203,7 +235,7 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
         looks_ll = _looks_like_lonlat(bounds)
         unit = (crs.unit or "").lower()
 
-        if crs.is_projected and "metre" in unit and looks_ll:
+        if crs.is_projected and _is_linear_unit(unit) and looks_ll:
             diags.append(Diagnostic(
                 "warning", "Possible CRS / coordinate mismatch",
                 f"The CRS is projected (units: {crs.unit}) but the coordinates "
@@ -240,28 +272,41 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
                         "The CRS is probably wrong for this location — double-check the projection.",
                     ))
 
-        # --- UTM zone / hemisphere mismatch ---
+        # --- UTM sanity, judged on the NATIVE coordinates ---
+        #
+        # These deliberately do NOT use the reprojected lat/lon: that is derived *from* the
+        # declared CRS, so it always agrees with it and can never reveal a mislabelled zone.
+        # Raw eastings/northings are an independent signal.
         zinfo = _parse_utm_zone(crs.utm_zone)
-        if zinfo and location and location.available:
+        if zinfo and crs.is_projected:
             znum, zhemi = zinfo
-            lat, lon = location.center_lat, location.center_lon
-            if (zhemi == "N" and lat < -1) or (zhemi == "S" and lat > 1):
-                where = "southern" if lat < 0 else "northern"
+            if zhemi == "N" and ymin < -1000:
                 diags.append(Diagnostic(
                     "warning", "UTM zone is the wrong hemisphere",
-                    f"The CRS is UTM zone {crs.utm_zone}, but the data is in the {where} "
-                    f"hemisphere (latitude {lat:.2f}).",
-                    "A north/south UTM mix-up shifts data by thousands of km — switch to the "
-                    "matching N/S zone.",
+                    f"The CRS is UTM zone {crs.utm_zone} (northern), but the northings go "
+                    f"negative ({ymin:g}), which only happens south of the equator.",
+                    f"A north/south mix-up shifts data by thousands of km. Try UTM zone "
+                    f"{znum}S instead.",
                 ))
-            expected = min(max(int((lon + 180) // 6) + 1, 1), 60)
-            if abs(expected - znum) >= 2:
+            elif zhemi == "S" and ymax > 10_100_000:
                 diags.append(Diagnostic(
-                    "warning", "Data is in a different UTM zone",
-                    f"The CRS is UTM zone {znum}, but the data's longitude ({lon:.2f}) falls in "
-                    f"zone {expected}.",
-                    f"The wrong UTM zone pushes coordinates sideways. Re-project to zone "
-                    f"{expected}, or confirm the source zone.",
+                    "warning", "UTM zone is the wrong hemisphere",
+                    f"The CRS is UTM zone {crs.utm_zone} (southern), but the northings "
+                    f"({ymax:g}) exceed the southern-hemisphere range.",
+                    f"Try the northern zone, UTM {znum}N.",
+                ))
+            # Eastings in any UTM zone stay near the 500 000 m central meridian; a long way
+            # outside means the numbers belong to a different zone.
+            if xmin < -200_000 or xmax > 1_200_000:
+                off = max(abs(500_000 - xmin), abs(xmax - 500_000))
+                zones_off = int(off // 400_000)
+                diags.append(Diagnostic(
+                    "warning", "Eastings don't fit this UTM zone",
+                    f"The CRS is UTM zone {crs.utm_zone}, but the eastings run "
+                    f"{xmin:g} … {xmax:g} — far outside the ~100 000–900 000 m a single zone "
+                    f"covers (roughly {zones_off} zone(s) away).",
+                    "The data was probably created in a different UTM zone than the one "
+                    "recorded. Confirm the source zone before using these coordinates.",
                 ))
 
         # --- antimeridian wrap (small data, full longitude span) ---
