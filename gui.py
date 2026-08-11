@@ -34,6 +34,7 @@ from kestrel import repair
 from kestrel.crsguess import search_crs, suggest_crs
 from kestrel.inspector import inspect_path
 from kestrel.textreport import format_report_text
+from mapview import MapCard
 
 # Diagnostic title -> the repair that addresses it.
 FIXABLE = {
@@ -312,86 +313,6 @@ class CrsPicker(QDialog):
     def _accept_if_valid(self):
         if self.chosen:
             self.accept()
-
-
-# --------------------------------------------------------------------------- #
-# Mini-map preview
-# --------------------------------------------------------------------------- #
-class MiniMap(QWidget):
-    """A tiny equirectangular world map that marks where the data sits (lon/lat).
-
-    Pure Qt drawing over a small bundled world outline (assets/world.json) — no
-    internet, no extra runtime dependencies.
-    """
-
-    _world = None  # cached list of [ [lon,lat], ... ] polygons
-
-    def __init__(self, west, south, east, north):
-        super().__init__()
-        self.box = (west, south, east, north)
-        self.setFixedHeight(200)
-
-    @classmethod
-    def _load_world(cls):
-        if cls._world is None:
-            cls._world = []
-            path = _asset("world.json")
-            if path:
-                try:
-                    import json
-                    with open(path, encoding="utf-8") as fh:
-                        cls._world = json.load(fh).get("polys", [])
-                except Exception:
-                    cls._world = []
-        return cls._world
-
-    def paintEvent(self, event):
-        w, h = self.width(), self.height()
-        map_w = min(float(w), h * 2.0)        # keep a 2:1 equirectangular panel
-        map_h = map_w / 2.0
-        ox = (w - map_w) / 2.0
-        oy = (h - map_h) / 2.0
-
-        def X(lon):
-            return ox + (lon + 180.0) / 360.0 * map_w
-
-        def Y(lat):
-            return oy + (90.0 - lat) / 180.0 * map_h
-
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(QRectF(ox, oy, map_w, map_h), QColor("#eaf2f8"))   # ocean
-        p.setBrush(QBrush(QColor("#d7e2d0")))                          # land
-        p.setPen(QPen(QColor("#a9bfa0"), 0))
-        for poly in self._load_world():
-            p.drawPolygon(QPolygonF([QPointF(X(c[0]), Y(c[1])) for c in poly]))
-
-        # equator + prime meridian
-        p.setPen(QPen(QColor(255, 255, 255, 130), 0))
-        p.drawLine(QPointF(ox, Y(0)), QPointF(ox + map_w, Y(0)))
-        p.drawLine(QPointF(X(0), oy), QPointF(X(0), oy + map_h))
-
-        west, south, east, north = self.box
-        x0, x1, y0, y1 = X(west), X(east), Y(north), Y(south)
-        rust = QColor("#c0622e")
-        if abs(x1 - x0) < 3 and abs(y1 - y0) < 3:        # point-ish -> crosshair + dot
-            cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-            p.setPen(QPen(QColor(192, 98, 46, 110), 1))
-            p.drawLine(QPointF(cx, oy), QPointF(cx, oy + map_h))
-            p.drawLine(QPointF(ox, cy), QPointF(ox + map_w, cy))
-            p.setPen(QPen(rust, 1.5))
-            p.setBrush(QBrush(QColor(192, 98, 46, 200)))
-            p.drawEllipse(QPointF(cx, cy), 4, 4)
-        else:                                            # extent -> rectangle
-            p.setPen(QPen(rust, 1.5))
-            p.setBrush(QBrush(QColor(192, 98, 46, 70)))
-            p.drawRect(QRectF(min(x0, x1), min(y0, y1),
-                              max(abs(x1 - x0), 4), max(abs(y1 - y0), 4)))
-
-        p.setPen(QPen(QColor("#cfd8dd"), 1))             # frame
-        p.setBrush(Qt.NoBrush)
-        p.drawRect(QRectF(ox, oy, map_w, map_h))
-        p.end()
 
 
 # --------------------------------------------------------------------------- #
@@ -683,7 +604,7 @@ class MainWindow(QMainWindow):
         )
         lay = QVBoxLayout(box)
         lay.setContentsMargins(12, 14, 12, 12)
-        lay.addWidget(MiniMap(loc.west, loc.south, loc.east, loc.north))
+        lay.addWidget(MapCard(loc, ASSETS_DIR))
         self.results_layout.addWidget(box)
 
     def _diagnostics_card(self, diagnostics):

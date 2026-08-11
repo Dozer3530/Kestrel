@@ -27,8 +27,9 @@ just takes a careful look.
   region the CRS is valid for
 - **Location (WGS84)** — the extent reprojected to lon/lat, so you can confirm the data lands
   where you expect on Earth
-- **Map preview** — a tiny offline world map marks where the data sits, so "where on Earth?" is
-  a one-second glance
+- **Map preview** — a globe showing where on Earth the data sits, next to a zoomed regional view
+  with borders, lakes and town names, so "is this in the right place?" is a one-second glance
+  (fully offline — no tiles, no API keys)
 - **Details** — geometry type, feature count and fields (vector); size, bands, data type,
   pixel size and NoData (raster); native extent
 - **Diagnostics** — common reasons a layer won't show up in QGIS:

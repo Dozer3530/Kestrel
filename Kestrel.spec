@@ -10,6 +10,7 @@ from PyInstaller.utils.hooks import collect_all
 datas = [("assets", "assets")]
 binaries = []
 hiddenimports = [
+    "mapview",
     "kestrel", "kestrel.inspector", "kestrel.diagnostics",
     "kestrel.models", "kestrel.textreport", "kestrel.tabular", "kestrel.repair",
     "kestrel.crsguess",
