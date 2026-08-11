@@ -605,7 +605,7 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(box)
         lay.setContentsMargins(12, 14, 12, 12)
         lay.addWidget(MapCard(loc, ASSETS_DIR,
-                              satellite=_settings().value("satellite", False, type=bool),
+                              satellite=_settings().value("satellite", True, type=bool),
                               on_toggle=lambda on: _settings().setValue("satellite", on)))
         self.results_layout.addWidget(box)
 

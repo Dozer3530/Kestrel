@@ -2,14 +2,14 @@
 
 Two modes for the detail pane:
 
-* **Offline (default)** — coastlines, lakes, borders and town names drawn from the
-  outlines bundled in ``assets/world.json``. No network, nothing to fail on a
-  locked-down machine. Zoom is clamped to a regional scale because the bundled
-  vectors have nothing to show closer in.
-* **Satellite** — Esri World Imagery tiles, fetched asynchronously and cached on disk.
-  There is no API key involved (so there is no secret to leak and no bill to run up),
-  and if the network is unavailable it quietly falls back to the offline drawing.
-  With real imagery underneath, the zoom clamp lifts and you can go right in.
+* **Satellite (default)** — Esri World Imagery tiles, fetched asynchronously and cached
+  on disk. There is no API key involved, so there is no secret to leak and no bill to
+  run up. With real imagery underneath, the zoom clamp lifts and you can go right in to
+  the field. If the network is unavailable it quietly falls back to the offline drawing
+  and says so, so this is safe to leave on.
+* **Offline** — coastlines, lakes, borders and town names drawn from the outlines
+  bundled in ``assets/world.json``. Works with no network at all. Zoom is clamped to a
+  regional scale because the bundled vectors have nothing to show closer in.
 """
 
 from __future__ import annotations
@@ -603,9 +603,23 @@ class MapCard(QWidget):
         self.toggle = QCheckBox("Satellite")
         self.toggle.setChecked(bool(satellite))
         self.toggle.setToolTip(
-            "Fetch Esri World Imagery for this view (needs an internet connection).\n"
-            "Off by default so Kestrel stays instant and works offline.")
-        self.toggle.setStyleSheet("color: #566573; font-size: 11px;")
+            "Show Esri World Imagery under the data (needs an internet connection).\n"
+            "Turn it off to use the offline map — Kestrel falls back to it automatically\n"
+            "if imagery can't be reached.")
+        # The default indicator all but vanishes against the app's light palette, so it
+        # gets an explicit box: white when off, filled rust when on.
+        self.toggle.setStyleSheet("""
+            QCheckBox { color: #566573; font-size: 11px; spacing: 6px; }
+            QCheckBox::indicator {
+                width: 13px; height: 13px;
+                border: 1px solid #8b97a1; border-radius: 3px; background: #ffffff;
+            }
+            QCheckBox::indicator:hover { border-color: #2980b9; }
+            QCheckBox::indicator:checked {
+                background: #c0622e; border: 1px solid #8f4720;
+            }
+            QCheckBox::indicator:checked:hover { background: #a4501f; }
+        """)
         self.toggle.toggled.connect(self._toggled)
         bar.addWidget(self.toggle, 0)
         detail_col.addLayout(bar)
