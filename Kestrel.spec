@@ -33,6 +33,9 @@ excludes = [
     # Optional rasterio deps Kestrel never uses — ~95 MB of dead weight.
     "scipy", "PIL", "Pillow",
     "botocore", "boto3", "s3transfer", "awscrt", "jmespath",
+    # pyogrio's optional Arrow bridge (read/write_arrow, use_arrow=True). Kestrel reads
+    # and writes through pyogrio.raw only, so this is ~78 MB we never execute.
+    "pyarrow",
 ]
 
 a = Analysis(
