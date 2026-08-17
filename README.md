@@ -65,6 +65,24 @@ files in the same folder that *do* declare a CRS, and the ones you've picked bef
 usual case (one file in a delivery lost its `.prj`) that's often the exactly-right answer.
 You can also type an EPSG code or search the EPSG database by name.
 
+## ArcGIS Pro layer files
+
+Drop a **`.lyrx`** (or `.mapx`) on Kestrel and it follows the layer to its data. Layer files
+don't contain data — they point at it — so the useful questions are different:
+
+- **Is the data still there?** A broken link is the red exclamation mark in ArcGIS Pro, and
+  the most common reason a layer draws nothing.
+- **Is it pointing at a scratch geodatabase?** Pro writes new features into a temporary
+  `Default.gdb` unless you tell it otherwise, and that folder gets cleaned up — so the layer
+  works today and is broken next week. Kestrel calls this out specifically.
+- **Is a definition query hiding features?** The data is there, the layer is filtering it.
+
+When the source resolves, Kestrel inspects it normally, so you also get the real CRS, extent
+and map preview of the data behind the layer.
+
+ArcMap's older binary `.lyr` isn't supported — it's an undocumented proprietary format that
+needs Esri's own libraries to read.
+
 ## Supported inputs
 
 Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON**, KML/KMZ/GML/GPX,

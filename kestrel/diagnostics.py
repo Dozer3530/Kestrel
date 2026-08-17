@@ -73,6 +73,10 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
         ))
         return diags
 
+    if report.is_layer_file:
+        _layer_file_diagnostics(diags, report)
+        return _dedupe(diags)
+
     if report.is_vector:
         # Tabular files (CSV/Excel) have no CRS — give coordinate-aware guidance instead.
         if report.driver in ("CSV", "XLSX") and report.layers:
@@ -126,6 +130,107 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
                empty=(r.width == 0 or r.height == 0))
 
     return diags
+
+
+def _dedupe(diags: List[Diagnostic]) -> List[Diagnostic]:
+    """Drop repeats — several layers often share one broken source, and saying so once
+    is more useful than saying it five times."""
+    seen = set()
+    out = []
+    for d in diags:
+        key = (d.severity, d.title, d.detail)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(d)
+    return out
+
+
+def _layer_file_diagnostics(diags: List[Diagnostic], report) -> None:
+    """An ArcGIS layer file points at data — so check the pointer, then the data."""
+    from .arcgis import temp_kind
+
+    multi = len(report.layers) > 1
+    for layer in report.layers:
+        ctx = f"'{layer.name}'" if multi else "this layer"
+        where = temp_kind(layer.source_path) if layer.source_path else None
+
+        if layer.source_missing:
+            if where == "pro":
+                diags.append(Diagnostic(
+                    "error", "Broken link to a temporary geodatabase",
+                    f"{ctx} points at {layer.source_path}, which is gone. That's inside a "
+                    "folder ArcGIS Pro creates for scratch data and later cleans up.",
+                    "The features were saved to Pro's default scratch geodatabase rather "
+                    "than a real one, so they're likely lost. Re-export from the original "
+                    "source into a permanent geodatabase, then repoint the layer.",
+                ))
+            elif where == "temp":
+                diags.append(Diagnostic(
+                    "error", "Broken data source (it was in a temp folder)",
+                    f"{ctx} points at {layer.source_path}, which is gone — and it lived in "
+                    "a temporary folder, so it was probably cleaned up automatically.",
+                    "Re-create the data somewhere permanent, then repoint the layer.",
+                ))
+            else:
+                diags.append(Diagnostic(
+                    "error", "Broken data source",
+                    f"{ctx} points at {layer.source_path}, which doesn't exist.",
+                    "This is the red exclamation mark in ArcGIS Pro. If the data moved, "
+                    "repoint the layer (right-click ▸ Properties ▸ Source ▸ Set Data Source).",
+                ))
+        elif where:
+            diags.append(Diagnostic(
+                "warning", "Data lives in a temporary folder",
+                f"{ctx} reads from {layer.source_path}, which "
+                + ("ArcGIS Pro cleans up." if where == "pro"
+                   else "Windows clears out periodically."),
+                "It works now but will break. Copy the data somewhere permanent and "
+                "repoint the layer before sharing this file.",
+            ))
+        elif layer.source_path is None and layer.source_kind:
+            diags.append(Diagnostic(
+                "info", "Layer reads from a service or database",
+                f"{ctx} connects to a {layer.source_kind} rather than a file, so Kestrel "
+                "can't check the data itself.",
+                "Whether it draws depends on that connection and your credentials.",
+            ))
+
+        if layer.definition_query:
+            query = layer.definition_query
+            shown = query if len(query) <= 160 else query[:160] + "…"
+            diags.append(Diagnostic(
+                "warning", "A definition query is filtering this layer",
+                f"{ctx} only shows features matching: {shown}",
+                "This is a very common reason features seem to be missing — the data is "
+                "there, the layer is hiding it. Clear the query in Layer Properties ▸ "
+                "Definition Query to see everything.",
+            ))
+
+        if layer.visible is False:
+            diags.append(Diagnostic(
+                "info", "Layer is turned off",
+                f"{ctx} is unchecked, so it won't draw when the file is added.",
+                "Tick it in the Contents pane.",
+            ))
+
+        if layer.read_error:
+            diags.append(Diagnostic(
+                "error", "Data source could not be read",
+                f"{ctx} points at {layer.source_path}, but it wouldn't open: "
+                f"{layer.read_error}",
+                "The file may be locked by another program, corrupt, or need a driver "
+                "Kestrel doesn't bundle.",
+            ))
+            continue
+
+        if layer.crs is not None and layer.native_bounds is not None:
+            _check(diags, layer.crs, layer.native_bounds, layer.location, ctx,
+                   feature_count=layer.feature_count,
+                   geometry_type=layer.geometry_type,
+                   invalid_geometry_count=layer.invalid_geometry_count,
+                   invalid_geometry_sampled=layer.invalid_geometry_sampled,
+                   invalid_geometry_reason=layer.invalid_geometry_reason)
 
 
 def _table_diagnostics(diags: List[Diagnostic], layer) -> None:

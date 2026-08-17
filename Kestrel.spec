@@ -13,7 +13,7 @@ hiddenimports = [
     "mapview",
     "kestrel", "kestrel.inspector", "kestrel.diagnostics",
     "kestrel.models", "kestrel.textreport", "kestrel.tabular", "kestrel.repair",
-    "kestrel.crsguess",
+    "kestrel.crsguess", "kestrel.arcgis",
 ]
 
 # Pull data files (proj.db, GDAL data), native libraries, and submodules for the

@@ -440,8 +440,11 @@ def inspect_path(path) -> InspectionReport:
 
     ext = os.path.splitext(path)[1].lower()
 
+    from .arcgis import LAYER_EXTS, inspect_layer_file
     from .tabular import TABLE_EXTS, inspect_table
-    if ext in TABLE_EXTS:
+    if ext in LAYER_EXTS:
+        report = inspect_layer_file(path, file_name, size)
+    elif ext in TABLE_EXTS:
         report = inspect_table(path, file_name, size, ext)
     elif ext in (".zip", ".kmz"):
         report = _inspect_zipped(path, file_name, size)

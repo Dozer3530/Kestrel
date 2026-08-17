@@ -63,6 +63,12 @@ class LayerInfo:
     coord_columns: Optional[Tuple[str, str]] = None  # CSV/Excel: detected (x, y) column names
     crs_guess: Optional[str] = None          # CSV/Excel: inferred CRS note (no CRS in the file)
     preview: Optional[dict] = None           # WGS84 shapes for the map: points/lines/polygons
+    # ArcGIS layer files (.lyrx) reference data rather than containing it:
+    source_path: Optional[str] = None        # the data this layer points at
+    source_kind: Optional[str] = None        # FileGDB, Shapefile, service, ...
+    source_missing: Optional[bool] = None    # True when that data isn't there any more
+    definition_query: Optional[str] = None   # a filter that can hide features
+    visible: Optional[bool] = None           # layer turned off in the map
 
 
 @dataclass
@@ -104,6 +110,10 @@ class InspectionReport:
     raster: Optional[RasterInfo] = None                          # for raster
     diagnostics: List[Diagnostic] = field(default_factory=list)
     error: Optional[str] = None                    # fatal read error message
+
+    @property
+    def is_layer_file(self) -> bool:
+        return self.kind == "layerfile"
 
     @property
     def is_vector(self) -> bool:

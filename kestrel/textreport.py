@@ -91,6 +91,26 @@ def format_report_text(report: InspectionReport) -> str:
                 out.append(f"  Fields ({len(layer.fields)}):    {joined}")
             out.append("")
 
+    elif report.is_layer_file:
+        for layer in report.layers:
+            out.append(f"LAYER: {layer.name}")
+            if layer.visible is False:
+                out.append("  Visible:        no (turned off)")
+            if layer.source_path:
+                out.append(f"  Points at:      {layer.source_path}")
+                out.append(f"  Source type:    {layer.source_kind}"
+                           + ("   *** MISSING ***" if layer.source_missing else ""))
+            elif layer.source_kind:
+                out.append(f"  Points at:      a {layer.source_kind} (not a file)")
+            if layer.definition_query:
+                out.append(f"  Filtered by:    {layer.definition_query[:120]}")
+            if layer.crs.defined or layer.feature_count is not None:
+                out.append(f"  Geometry:       {layer.geometry_type}")
+                out.append(f"  Features:       {layer.feature_count}")
+                out += _crs_lines(layer.crs)
+                out += _loc_lines(layer.location)
+            out.append("")
+
     elif report.is_raster and report.raster:
         r = report.raster
         out.append("RASTER")

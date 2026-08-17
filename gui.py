@@ -82,8 +82,9 @@ SEV_COLOR = {"error": "#c0392b", "warning": "#d68910", "info": "#2471a3"}
 SEV_LABEL = {"error": "ERROR", "warning": "WARNING", "info": "INFO"}
 
 FILE_FILTER = (
-    "Geospatial files (*.zip *.shp *.gpkg *.geojson *.json *.kml *.gml *.gpx "
-    "*.tif *.tiff *.img *.vrt *.jp2 *.asc);;All files (*.*)"
+    "Geospatial files (*.zip *.shp *.gpkg *.geojson *.json *.kml *.kmz *.gml *.gpx "
+    "*.csv *.xlsx *.lyrx *.mapx *.tif *.tiff *.img *.vrt *.jp2 *.asc);;"
+    "ArcGIS layer files (*.lyrx *.mapx);;All files (*.*)"
 )
 
 def _base_dir():
@@ -492,7 +493,33 @@ class MainWindow(QMainWindow):
         if report.error:
             self._card("Could not read file", [("Error", report.error)], accent=SEV_COLOR["error"])
 
-        if report.is_vector:
+        if report.is_layer_file:
+            for layer in report.layers:
+                prefix = f"{layer.name} — " if len(report.layers) > 1 else ""
+                pairs = [("Layer", layer.name)]
+                if layer.visible is False:
+                    pairs.append(("Visible", "No — turned off in the map"))
+                if layer.source_path:
+                    pairs.append(("Points at", layer.source_path))
+                    pairs.append(("Source", (layer.source_kind or "?")
+                                  + (" — MISSING" if layer.source_missing else "")))
+                elif layer.source_kind:
+                    pairs.append(("Points at", f"a {layer.source_kind} (not a file)"))
+                if layer.definition_query:
+                    pairs.append(("Definition query", layer.definition_query))
+                self._card(prefix + "ArcGIS layer",
+                           pairs,
+                           accent=SEV_COLOR["error"] if layer.source_missing else "#7d3c98")
+                if layer.crs.defined:
+                    self._crs_card(prefix, layer.crs)
+                    self._location_card(prefix, layer.location)
+                    self._map_card(prefix, layer.location, layer.preview)
+                    self._card(prefix + "Data behind the layer", [
+                        ("Geometry", layer.geometry_type),
+                        ("Features", layer.feature_count),
+                    ])
+
+        elif report.is_vector:
             if len(report.layers) > 1:
                 self._card("Dataset",
                            [("Layers", ", ".join(l.name for l in report.layers))],
@@ -948,7 +975,7 @@ def _diag(path):
 
 
 _CONTEXT_EXTS = [".shp", ".gpkg", ".geojson", ".kml", ".kmz", ".gml", ".gpx",
-                 ".tif", ".tiff", ".vrt", ".img", ".fgb"]
+                 ".tif", ".tiff", ".vrt", ".img", ".fgb", ".lyrx", ".mapx"]
 
 
 def _register_context_menu(remove=False):
