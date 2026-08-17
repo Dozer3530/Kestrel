@@ -4,7 +4,7 @@
 ; Per-user install (no admin needed) so it works on locked-down machines.
 
 #define AppName "Kestrel"
-#define AppVersion "0.6.1"
+#define AppVersion "0.7.0"
 #define AppPublisher "Dozer3530"
 #define AppExe "Kestrel.exe"
 #define AppURL "https://github.com/Dozer3530/Kestrel"

@@ -27,7 +27,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QInputDialog, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea,
+    QAbstractItemView, QHeaderView, QInputDialog, QMainWindow, QMenu, QMessageBox,
+    QProgressDialog, QPushButton, QScrollArea, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -164,8 +165,8 @@ class DropArea(QFrame):
         self.setMinimumHeight(110)
         layout = QVBoxLayout(self)
         self.label = QLabel(
-            "Drop a file here to check it\n"
-            "shapefile (zipped or plain) · GeoPackage · GeoJSON · GeoTIFF · …\n\n"
+            "Drop a file here to check it — or a folder to check everything in it\n"
+            "shapefile · GeoPackage · File Geodatabase · GeoJSON · DXF · CSV · LAS · GeoTIFF · …\n\n"
             "…or click Browse"
         )
         self.label.setAlignment(Qt.AlignCenter)
@@ -372,11 +373,16 @@ class MainWindow(QMainWindow):
         self.folder_btn = QPushButton("Open folder")
         self.folder_btn.clicked.connect(self.open_folder)
         self.folder_btn.setEnabled(False)
+        folder_scan_btn = QPushButton("Audit folder…")
+        folder_scan_btn.setToolTip("Check every dataset in a folder at once")
+        folder_scan_btn.clicked.connect(self.browse_folder)
+
         url_btn = QPushButton("Open URL…")
         url_btn.setToolTip("Inspect an ArcGIS REST service (FeatureServer / MapServer)")
         url_btn.clicked.connect(self.open_url)
 
         top.addWidget(browse)
+        top.addWidget(folder_scan_btn)
         top.addWidget(url_btn)
         top.addWidget(self.fix_btn)
         top.addStretch(1)
@@ -440,8 +446,142 @@ class MainWindow(QMainWindow):
         if ok and url.strip():
             self.load_path(url.strip())
 
+    # --- batch ------------------------------------------------------------ #
+    def browse_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Audit a folder of data", "")
+        if folder:
+            self.run_batch(folder)
+
+    def run_batch(self, folder: str):
+        """Inspect every dataset in a folder and show a sortable summary."""
+        from kestrel.batch import scan_folder, to_csv, to_html
+
+        dialog = QProgressDialog("Looking for data…", "Cancel", 0, 0, self)
+        dialog.setWindowTitle("Auditing folder")
+        dialog.setMinimumDuration(0)
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setValue(0)
+
+        def found(n):
+            dialog.setLabelText(f"Looking for data… {n} found")
+            QApplication.processEvents()
+            return not dialog.wasCanceled()
+
+        def progress(done, total, name):
+            dialog.setMaximum(total)
+            dialog.setValue(done)
+            dialog.setLabelText(f"Checking {done} of {total}\n{name}")
+            QApplication.processEvents()
+            return not dialog.wasCanceled()
+
+        try:
+            result = scan_folder(folder, progress=progress, on_found=found)
+        except Exception:
+            dialog.close()
+            QMessageBox.critical(self, "Folder audit failed", traceback.format_exc())
+            return
+        dialog.close()
+
+        if not result.rows:
+            QMessageBox.information(
+                self, "Nothing to check",
+                f"No geospatial data found in:\n{folder}")
+            return
+
+        self.batch_result = result
+        self.current_report = None
+        self.copy_btn.setEnabled(False)
+        self.fix_btn.setEnabled(False)
+        self.folder_btn.setEnabled(True)
+        counts = result.counts
+        self.status.setText(
+            f"{len(result.rows)} dataset(s) in {folder}   ·   "
+            f"{counts['error']} error, {counts['warning']} warning, {counts['ok']} clean")
+        self._render_batch(result)
+
+    def _render_batch(self, result):
+        self.clear_results()
+        order = {"error": 0, "warning": 1, "info": 2, "ok": 3}
+        rows = sorted(result.rows, key=lambda r: (order.get(r.worst, 9), r.name))
+
+        box = QGroupBox(f"Folder audit — {len(rows)} dataset(s)")
+        box.setStyleSheet(
+            "QGroupBox { font-weight: 700; border: 1px solid #d5dbdf; border-radius: 8px;"
+            " margin-top: 10px; background: #ffffff; }"
+            " QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px;"
+            " color: #1a5276; }")
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(12, 14, 12, 12)
+
+        bar = QHBoxLayout()
+        csv_btn = QPushButton("Export CSV…")
+        csv_btn.clicked.connect(lambda: self._export_batch(to_csvfile=True))
+        html_btn = QPushButton("Export HTML…")
+        html_btn.clicked.connect(lambda: self._export_batch(to_csvfile=False))
+        bar.addWidget(csv_btn)
+        bar.addWidget(html_btn)
+        bar.addStretch(1)
+        hint = QLabel("Double-click a row to open that file")
+        hint.setStyleSheet("color: #7f8c8d; font-size: 11px;")
+        bar.addWidget(hint)
+        lay.addLayout(bar)
+
+        table = QTableWidget(len(rows), 5)
+        table.setHorizontalHeaderLabels(["File", "Type", "CRS", "Size", "Issues"])
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSortingEnabled(False)
+        table.verticalHeader().setVisible(False)
+        for i, row in enumerate(rows):
+            colour = QColor(SEV_COLOR.get(row.worst, "#1e8449")
+                            if row.worst != "ok" else "#1e8449")
+            for col, text in enumerate((row.name, row.kind, row.crs, row.features,
+                                        row.issues)):
+                item = QTableWidgetItem(str(text))
+                if col == 0:
+                    item.setData(Qt.UserRole, row.path)
+                if row.worst in ("error", "warning"):
+                    item.setForeground(colour)
+                table.setItem(i, col, item)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        table.resizeColumnsToContents()
+        table.setSortingEnabled(True)
+        table.itemDoubleClicked.connect(self._open_batch_row)
+        table.setMinimumHeight(420)
+        lay.addWidget(table)
+        self.results_layout.addWidget(box)
+
+    def _open_batch_row(self, item):
+        path = item.tableWidget().item(item.row(), 0).data(Qt.UserRole)
+        if path:
+            self.load_path(path)
+
+    def _export_batch(self, to_csvfile: bool):
+        from kestrel.batch import to_csv, to_html
+
+        if not getattr(self, "batch_result", None):
+            return
+        kind = ("CSV (*.csv)" if to_csvfile else "HTML (*.html)")
+        default = os.path.join(os.path.dirname(self.batch_result.folder),
+                               "kestrel_audit." + ("csv" if to_csvfile else "html"))
+        path, _ = QFileDialog.getSaveFileName(self, "Save the audit", default, kind)
+        if not path:
+            return
+        try:
+            written = (to_csv if to_csvfile else to_html)(self.batch_result, path)
+        except Exception:
+            QMessageBox.critical(self, "Export failed", traceback.format_exc())
+            return
+        self.status.setText(f"Saved {written}")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(written))
+
     def load_path(self, path: str):
         if not path:
+            return
+        # A folder that isn't a geodatabase means "audit everything in here".
+        if os.path.isdir(path) and not path.lower().rstrip("\\/").endswith(".gdb"):
+            self.run_batch(path)
             return
         self.clear_results()
         self.status.setText(f"Inspecting:  {path}")

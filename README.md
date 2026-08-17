@@ -96,10 +96,28 @@ and map preview of the data behind the layer.
 ArcMap's older binary `.lyr` isn't supported — it's an undocumented proprietary format that
 needs Esri's own libraries to read.
 
+## Audit a whole folder
+
+Drop a **folder** on Kestrel (or use *Audit folder…*) and it checks every dataset inside —
+one row per dataset, worst problems first, sortable, with **Export CSV / HTML**. That answers
+the question that actually costs time: *which of these 400 files is going to be a problem?*
+Useful before a delivery goes out, or right after one arrives.
+
+From the command line:
+
+```
+py cli.py --batch path\to\folder --html audit.html --csv audit.csv
+py cli.py --json path\to\file.gpkg        REM machine-readable, for pipelines
+```
+
+Exit code is 1 if anything has an error, so it drops straight into a CI check.
+
 ## Supported inputs
 
-Zipped or plain **shapefiles**, **GeoPackage** (`.gpkg`, multi-layer), **GeoJSON**, KML/KMZ/GML/GPX,
-**CSV / Excel** with coordinate columns (it finds the lon/lat or x/y and infers the CRS), and
+Zipped or plain **shapefiles**, **GeoPackage** (multi-layer), **File Geodatabase** (`.gdb` —
+just drop the folder), **GeoJSON**, KML/KMZ/GML/GPX, **DXF** (CAD), FlatGeobuf, TopoJSON, OSM,
+MapInfo, PMTiles/MVT, **CSV / Excel** including the old `.xls` (it finds the lon/lat or x/y and
+infers the CRS), **LAS / LAZ point clouds** (header-only, so it's instant on huge clouds), and
 **rasters** via rasterio (**GeoTIFF**, IMG, VRT, JPEG2000, …). Unknown extensions are tried as
 vector first, then raster, so most things just work.
 
