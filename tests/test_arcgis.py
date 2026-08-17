@@ -213,6 +213,47 @@ def test_pitemx_points_at_a_service(tmp):
     print("OK  test_pitemx_points_at_a_service")
 
 
+def test_repair_follows_the_pointer(tmp):
+    """Repairs must read the data a layer file / service points at, not the pointer.
+
+    Handing GDAL the .lyrx or .pitemx itself produced a raw DataSourceError.
+    """
+    from kestrel import repair
+    from kestrel.models import CrsInfo, InspectionReport, LayerInfo, LocationInfo
+
+    def report(kind, **layer_kw):
+        layer = LayerInfo(name="Flags", geometry_type="Point", feature_count=5, fields=[],
+                          native_bounds=(0, 0, 1, 1), crs=CrsInfo(defined=True, epsg=3857),
+                          location=LocationInfo(available=False), **layer_kw)
+        return InspectionReport(path="X.pitemx", file_name="X.pitemx", size_bytes=1,
+                                kind=kind, driver="d", layers=[layer])
+
+    svc = report("service",
+                 source_path="https://h/arcgis/rest/services/A/FeatureServer/0")
+    source, sub, stem, note = repair.readable_source(svc)
+    assert source.startswith("ESRIJSON:"), source
+    assert "FeatureServer/0/query" in source, source
+    assert stem == "Flags" and note, (stem, note)
+
+    lyr = report("layerfile", source_path=os.path.join("C:\\", "d", "roads.shp"),
+                 source_missing=False)
+    source, sub, stem, note = repair.readable_source(lyr)
+    assert source.endswith("roads.shp") and stem == "roads", (source, stem)
+
+    broken = report("layerfile", source_path="C:\\gone.gdb", source_missing=True)
+    source, _sub, _stem, note = repair.readable_source(broken)
+    assert source is None and "missing" in note, note
+
+    # a service can't be "assigned" a CRS, and that should be said clearly
+    plan = repair.plan_repair(svc, repair.ASSIGN_CRS, tmp, epsg=4326)
+    assert not plan.ok and "already declares" in plan.blocker, plan.blocker
+    # ...but converting it is a legitimate export
+    plan = repair.plan_repair(svc, repair.CONVERT, tmp, target_format="gpkg")
+    assert plan.ok, plan.blocker
+    assert plan.target.endswith(".gpkg")
+    print("OK  test_repair_follows_the_pointer")
+
+
 def test_garbage_file_fails_gracefully(tmp):
     p = os.path.join(tmp, "junk.lyrx")
     with open(p, "w", encoding="utf-8") as fh:
@@ -236,6 +277,7 @@ def main():
         test_service_url_recognition()
         test_esri_wkid_to_epsg()
         test_pitemx_points_at_a_service(tmp)
+        test_repair_follows_the_pointer(tmp)
         test_garbage_file_fails_gracefully(tmp)
         print("\nALL ARCGIS TESTS PASSED")
         return 0

@@ -167,8 +167,11 @@ def _read_vector(source: str, layer_name: Optional[str]):
 
     from .inspector import _gdal_path
 
+    # GDAL virtual sources (ESRIJSON:https://..., /vsizip/...) must not be path-mangled.
+    resolved = source if "://" in str(source) or str(source).startswith(
+        ("ESRIJSON:", "/vsi")) else _gdal_path(source)
     kwargs = {"layer": layer_name} if layer_name else {}
-    meta, _fids, geom, fields = raw_read(_gdal_path(source), **kwargs)
+    meta, _fids, geom, fields = raw_read(resolved, **kwargs)
     return meta, geom, fields
 
 
@@ -228,6 +231,39 @@ def _fmt_key(fmt: str) -> str:
     return (fmt or "gpkg").lower().lstrip(".")
 
 
+def readable_source(report, layer=None):
+    """Where the *data* actually lives, which isn't always ``report.path``.
+
+    A layer file or portal item only points at data, and a service isn't a file at all —
+    so repairs have to follow the pointer instead of handing GDAL the .lyrx/.pitemx.
+    Returns ``(source, layer_name, stem, note)``; source is None when nothing is readable.
+    """
+    layer = layer or (report.layers[0] if report.layers else None)
+
+    if report.is_service:
+        if layer is None or not layer.source_path:
+            return None, None, None, "this service exposes no readable layer"
+        query = (f"{layer.source_path}/query?where=1%3D1&outFields=*&f=json"
+                 f"&resultRecordCount={_SERVICE_EXPORT_LIMIT}&returnGeometry=true")
+        return ("ESRIJSON:" + query, None, _safe_layer_name(layer.name),
+                f"Reads up to {_SERVICE_EXPORT_LIMIT} features from the service.")
+
+    if report.is_layer_file:
+        if layer is None or not layer.source_path:
+            return None, None, None, "this layer records no data source to work from"
+        if layer.source_missing:
+            return None, None, None, ("the data this layer points at is missing, so there's "
+                                      "nothing to convert")
+        sub = layer.name if str(layer.source_path).lower().endswith(".gdb") else None
+        stem = os.path.splitext(os.path.basename(layer.source_path))[0] or layer.name
+        return layer.source_path, sub, _safe_layer_name(stem), None
+
+    return report.path, None, os.path.splitext(os.path.basename(report.path))[0], None
+
+
+_SERVICE_EXPORT_LIMIT = 5000
+
+
 def _safe_layer_name(name: str) -> str:
     """A layer name GDAL will accept (no spaces, punctuation or leading digit/dot)."""
     cleaned = "".join(c if (c.isalnum() or c == "_") else "_" for c in str(name or "layer"))
@@ -244,7 +280,6 @@ def plan_repair(report, operation: str, out_dir: str, *, layer=None, epsg=None,
                 target_format: str = "gpkg") -> RepairPlan:
     """Describe what a repair would do, without writing anything."""
     src = report.path
-    stem = os.path.splitext(os.path.basename(src))[0]
     warnings: List[str] = []
 
     def blocked(msg):
@@ -255,13 +290,30 @@ def plan_repair(report, operation: str, out_dir: str, *, layer=None, epsg=None,
     if not out_dir:
         return blocked("no output folder chosen")
 
+    # Follow layer files / portal items / services to the data they point at.
+    data_src, _sub, stem, note = readable_source(report, layer)
+    if data_src is None:
+        return blocked(note or "there's no readable data behind this")
+    if note:
+        warnings.append(note)
+    stem = stem or os.path.splitext(os.path.basename(src))[0]
+
+    if report.is_service and operation == ASSIGN_CRS:
+        return blocked("a service already declares its CRS — use Reproject or Convert "
+                       "to write a copy in a different one")
+    if (report.is_service or report.is_layer_file) and operation == TABLE_TO_POINTS:
+        return blocked("that only applies to CSV/Excel tables")
+
     if operation in (ASSIGN_CRS, REPROJECT):
         if epsg is None:
             return blocked("no CRS chosen")
 
+    # Layer files and services have no meaningful "own" format, so default to GeoPackage.
+    native_fmt = (_fmt_key(os.path.splitext(src)[1])
+                  if not (report.is_service or report.is_layer_file) else "gpkg")
+
     if operation == ASSIGN_CRS:
-        fmt = _fmt_key(os.path.splitext(src)[1]) if _fmt_key(
-            os.path.splitext(src)[1]) in FORMATS else "gpkg"
+        fmt = native_fmt if native_fmt in FORMATS else "gpkg"
         driver, ext = FORMATS[fmt]
         target = _unique_path(out_dir, stem + "_crs", ext)
         desc = (f"Write a copy tagged EPSG:{epsg}. Coordinates are not changed — this only "
@@ -271,16 +323,14 @@ def plan_repair(report, operation: str, out_dir: str, *, layer=None, epsg=None,
         if driver == "ESRI Shapefile":
             warnings.append(_SHP_LIMITS)
     elif operation == REPROJECT:
-        fmt = _fmt_key(os.path.splitext(src)[1]) if _fmt_key(
-            os.path.splitext(src)[1]) in FORMATS else "gpkg"
+        fmt = native_fmt if native_fmt in FORMATS else "gpkg"
         driver, ext = FORMATS[fmt]
         target = _unique_path(out_dir, f"{stem}_epsg{epsg}", ext)
         desc = f"Transform the coordinates into EPSG:{epsg} and write a new file."
         if report.layers and not report.layers[0].crs.defined:
             return blocked("can't reproject a file with no CRS — assign its CRS first")
     elif operation == FIX_GEOMETRY:
-        fmt = _fmt_key(os.path.splitext(src)[1]) if _fmt_key(
-            os.path.splitext(src)[1]) in FORMATS else "gpkg"
+        fmt = native_fmt if native_fmt in FORMATS else "gpkg"
         driver, ext = FORMATS[fmt]
         target = _unique_path(out_dir, stem + "_fixed", ext)
         bad = report.layers[0].invalid_geometry_count if report.layers else None
@@ -372,11 +422,17 @@ def _do_vector_op(report, op, tmp_path, driver, epsg, layer, out_layer) -> List[
     import shapely
 
     warnings: List[str] = []
-    layer_name = layer or (report.layers[0].name if report.layers else None)
+    data_src, sub, _stem, _note = readable_source(report)
+    if data_src is None:
+        raise RuntimeError("there's no readable data behind this file")
+
+    layer_name = sub if sub is not None else layer
+    if layer_name is None and not (report.is_service or report.is_layer_file):
+        layer_name = report.layers[0].name if report.layers else None
     if layer_name in (None, "(default)"):
         layer_name = None
 
-    meta, geom, fields = _read_vector(report.path, layer_name)
+    meta, geom, fields = _read_vector(data_src, layer_name)
     src_crs = meta.get("crs")
     out_crs = src_crs
     geoms = shapely.from_wkb(geom) if geom is not None else None
