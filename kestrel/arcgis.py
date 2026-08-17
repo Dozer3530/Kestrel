@@ -26,7 +26,7 @@ from typing import List, Optional, Tuple
 
 from .models import CrsInfo, InspectionReport, LayerInfo, LocationInfo
 
-LAYER_EXTS = {".lyrx", ".mapx"}
+LAYER_EXTS = {".lyrx", ".mapx", ".pitemx"}
 
 # CIM layer types that carry data (group layers just hold others)
 _DATA_LAYERS = {
@@ -152,6 +152,20 @@ def inspect_layer_file(path, file_name, size) -> InspectionReport:
             path=path, file_name=file_name, size_bytes=size, kind="layerfile",
             driver="ArcGIS layer file",
             error="this doesn't look like a readable ArcGIS layer file (expected CIM JSON)")
+
+    # A .pitemx is a portal item: a pointer to a hosted service. Follow it.
+    item_url = doc.get("url")
+    if item_url and str(doc.get("type", "")).endswith("Service"):
+        from .esri import inspect_service, is_service_url
+
+        if is_service_url(item_url):
+            report = inspect_service(item_url)
+            report.path = path
+            report.file_name = file_name
+            report.size_bytes = size
+            report.service_title = doc.get("title") or report.service_title
+            report.portal_access = doc.get("access")
+            return report
 
     base_dir = os.path.dirname(os.path.abspath(path))
     report = InspectionReport(

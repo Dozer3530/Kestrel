@@ -419,8 +419,17 @@ def _inspect_raster(path: str, file_name: str, size: Optional[int],
 # Entry point
 # --------------------------------------------------------------------------- #
 def inspect_path(path) -> InspectionReport:
-    """Inspect a geospatial file and return a structured :class:`InspectionReport`."""
+    """Inspect a geospatial file, an ArcGIS layer file, or a service URL."""
     path = os.fspath(path)
+
+    # An ArcGIS REST service URL is inspected over the network, not from disk.
+    from .esri import inspect_service, is_service_url
+    if is_service_url(path):
+        report = inspect_service(path)
+        from .diagnostics import run_diagnostics
+        report.diagnostics = run_diagnostics(report)
+        return report
+
     # Normalize slashes / UNC form so GDAL can open the file. Network paths arrive as
     # //server/share/x.gpkg, which GDAL mangles into /share/x.gpkg (host dropped);
     # os.path.normpath turns it into \\server\share\x.gpkg, which GDAL opens fine.

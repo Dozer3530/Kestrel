@@ -16,7 +16,8 @@ from .models import CrsInfo, InspectionReport, LayerInfo, LocationInfo
 
 CSV_EXTS = {".csv", ".tsv"}
 EXCEL_EXTS = {".xlsx", ".xlsm"}
-TABLE_EXTS = CSV_EXTS | EXCEL_EXTS
+XLS_EXTS = {".xls"}                 # the old binary format; GDAL has no driver for it
+TABLE_EXTS = CSV_EXTS | EXCEL_EXTS | XLS_EXTS
 
 # Candidate coordinate column names, highest priority first (matched case-insensitively).
 _X_NAMES = ["longitude", "long", "lon", "lng", "x", "easting", "east",
@@ -42,11 +43,18 @@ def _finite(v) -> bool:
 
 def inspect_table(path, file_name, size, ext) -> InspectionReport:
     try:
+        if ext in XLS_EXTS:
+            return _inspect_xls(path, file_name, size)
         if ext in EXCEL_EXTS:
             return _inspect_excel(path, file_name, size)
         return _inspect_csv(path, file_name, size)
+    except ImportError:
+        return InspectionReport(
+            path=path, file_name=file_name, size_bytes=size, kind="vector", driver="XLS",
+            error="reading the old .xls format needs the xlrd package "
+                  "(py -m pip install xlrd), or re-save the file as .xlsx or .csv")
     except Exception as exc:
-        driver = "XLSX" if ext in EXCEL_EXTS else "CSV"
+        driver = {True: "XLS"}.get(ext in XLS_EXTS, "XLSX" if ext in EXCEL_EXTS else "CSV")
         return InspectionReport(path=path, file_name=file_name, size_bytes=size,
                                 kind="vector", driver=driver, error=str(exc))
 
@@ -160,6 +168,24 @@ def _inspect_csv(path, file_name, size) -> InspectionReport:
         yi = _pick(header_norm, _Y_NAMES)
         return _build_report(path, file_name, size, "CSV", "(table)",
                              header, xi, yi, reader)
+
+
+def _inspect_xls(path, file_name, size) -> InspectionReport:
+    """Excel 97-2003 (.xls). GDAL ships no XLS driver, so this goes through xlrd."""
+    import xlrd
+
+    book = xlrd.open_workbook(path)
+    try:
+        sheet = book.sheet_by_index(0)
+        header = [str(v).strip() for v in sheet.row_values(0)] if sheet.nrows else []
+        header_norm = [_norm(h) for h in header]
+        xi = _pick(header_norm, _X_NAMES)
+        yi = _pick(header_norm, _Y_NAMES)
+        rows = (sheet.row_values(r) for r in range(1, sheet.nrows))
+        return _build_report(path, file_name, size, "XLS", sheet.name or "(sheet)",
+                             header, xi, yi, rows)
+    finally:
+        book.release_resources()
 
 
 def _inspect_excel(path, file_name, size) -> InspectionReport:

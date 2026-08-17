@@ -164,6 +164,55 @@ def test_resolve_source_shapes():
     print("OK  test_resolve_source_shapes")
 
 
+def test_service_url_recognition():
+    """URL parsing must work without touching the network."""
+    from kestrel.esri import is_service_url, split_service_url
+
+    base = "https://services6.arcgis.com/abc/arcgis/rest/services/Flags/FeatureServer"
+    assert is_service_url(base)
+    assert is_service_url(base + "/0")
+    assert is_service_url(base.replace("FeatureServer", "MapServer") + "/12")
+    assert not is_service_url(r"C:\data\thing.gpkg")
+    assert not is_service_url("https://example.com/not/a/service")
+    assert not is_service_url("")
+
+    assert split_service_url(base) == (base, None)
+    assert split_service_url(base + "/3") == (base, 3)
+    assert split_service_url(base + "/0/") == (base, 0)
+    print("OK  test_service_url_recognition")
+
+
+def test_esri_wkid_to_epsg():
+    """Esri's 102100 is EPSG:3857; latestWkid is the one to trust."""
+    from kestrel.esri import _crs_from_sr
+
+    crs, _ = _crs_from_sr({"wkid": 102100, "latestWkid": 3857})
+    assert crs.defined and crs.epsg == 3857, crs.summary
+    crs, _ = _crs_from_sr({"wkid": 4326})
+    assert crs.epsg == 4326
+    crs, _ = _crs_from_sr(None)
+    assert not crs.defined
+    print("OK  test_esri_wkid_to_epsg")
+
+
+def test_pitemx_points_at_a_service(tmp):
+    """A portal item file is a pointer; it should be recognised as one."""
+    from kestrel.esri import is_service_url
+
+    doc = {
+        "type": "Feature Service", "title": "Plots", "access": "private",
+        "url": "https://services6.arcgis.com/abc/arcgis/rest/services/Flags/FeatureServer",
+    }
+    p = os.path.join(tmp, "item.pitemx")
+    with open(p, "w", encoding="utf-8-sig") as fh:
+        json.dump(doc, fh)
+    assert is_service_url(doc["url"])
+    # inspect_path would go to the network here, so just prove routing and parsing
+    from kestrel.arcgis import LAYER_EXTS
+    assert ".pitemx" in LAYER_EXTS
+    print("OK  test_pitemx_points_at_a_service")
+
+
 def test_garbage_file_fails_gracefully(tmp):
     p = os.path.join(tmp, "junk.lyrx")
     with open(p, "w", encoding="utf-8") as fh:
@@ -184,6 +233,9 @@ def main():
         test_hidden_layer_is_noted(tmp)
         test_relative_workspace_resolves(tmp)
         test_service_connection_is_not_a_missing_file(tmp)
+        test_service_url_recognition()
+        test_esri_wkid_to_epsg()
+        test_pitemx_points_at_a_service(tmp)
         test_garbage_file_fails_gracefully(tmp)
         print("\nALL ARCGIS TESTS PASSED")
         return 0

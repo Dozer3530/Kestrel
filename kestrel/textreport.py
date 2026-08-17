@@ -91,6 +91,33 @@ def format_report_text(report: InspectionReport) -> str:
                 out.append(f"  Fields ({len(layer.fields)}):    {joined}")
             out.append("")
 
+    elif report.is_service:
+        if report.service_title:
+            out.append(f"Service: {report.service_title}")
+        if report.service_capabilities:
+            out.append(f"Allows:  {report.service_capabilities}")
+        if report.portal_access:
+            out.append(f"Sharing: {report.portal_access}")
+        out.append("")
+        for layer in report.layers:
+            out.append(f"LAYER: {layer.name}")
+            out.append(f"  Endpoint:       {layer.source_path}")
+            out.append(f"  Geometry:       {layer.geometry_type}")
+            out.append(f"  Features:       {layer.feature_count}"
+                       + ("  (sample)" if layer.sampled else ""))
+            out += _crs_lines(layer.crs)
+            out += _loc_lines(layer.location)
+            if layer.actual_wgs:
+                out.append(f"  Data covers:    {_fmt_bounds(layer.actual_wgs)}  (lon/lat, measured)")
+            pub = layer.declared_wgs
+            if pub is not None and getattr(pub, "available", False):
+                out.append("  Published as:   %.3f, %.3f  ->  %.3f, %.3f  (lon/lat)"
+                           % (pub.west, pub.south, pub.east, pub.north))
+            if layer.fields:
+                out.append(f"  Fields ({len(layer.fields)}):    "
+                           + ", ".join(n for n, _ in layer.fields))
+            out.append("")
+
     elif report.is_layer_file:
         for layer in report.layers:
             out.append(f"LAYER: {layer.name}")

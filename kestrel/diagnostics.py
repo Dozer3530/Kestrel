@@ -73,13 +73,17 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
         ))
         return diags
 
+    if report.is_service:
+        _service_diagnostics(diags, report)
+        return _dedupe(diags)
+
     if report.is_layer_file:
         _layer_file_diagnostics(diags, report)
         return _dedupe(diags)
 
     if report.is_vector:
         # Tabular files (CSV/Excel) have no CRS — give coordinate-aware guidance instead.
-        if report.driver in ("CSV", "XLSX") and report.layers:
+        if report.driver in ("CSV", "XLSX", "XLS") and report.layers:
             _table_diagnostics(diags, report.layers[0])
             return diags
         if not report.layers:
@@ -130,6 +134,87 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
                empty=(r.width == 0 or r.height == 0))
 
     return diags
+
+
+def _service_diagnostics(diags: List[Diagnostic], report) -> None:
+    """A hosted service is reachable and self-describing — check what it claims."""
+    if report.portal_access and report.portal_access.lower() != "public":
+        diags.append(Diagnostic(
+            "info", "This service is not public",
+            f"The item is shared as '{report.portal_access}', so anyone opening it needs "
+            "permission in your ArcGIS organisation.",
+            "Kestrel read what the service allows anonymously. If numbers look wrong or "
+            "empty, sign-in is probably required for the rest.",
+        ))
+    if len(report.layers) > 1:
+        diags.append(Diagnostic(
+            "info", "Service has several layers",
+            "This service publishes %d layers: %s."
+            % (len(report.layers), ", ".join(l.name for l in report.layers)),
+            "Add the specific layer you want rather than the whole service.",
+        ))
+
+    multi = len(report.layers) > 1
+    for layer in report.layers:
+        ctx = f"'{layer.name}'" if multi else "this layer"
+
+        if layer.read_error:
+            diags.append(Diagnostic(
+                "error", "Layer could not be read",
+                f"{ctx} did not return a usable description: {layer.read_error}",
+                "The layer may need sign-in, or the service may be offline.",
+            ))
+            continue
+
+        if layer.feature_count is None:
+            diags.append(Diagnostic(
+                "warning", "Features could not be read",
+                f"{ctx} describes itself, but querying its features failed. That usually "
+                "means the service requires sign-in for data access.",
+                "Kestrel can still show the published CRS and extent. To read the "
+                "features, export the layer or make it public.",
+            ))
+        elif layer.feature_count == 0:
+            diags.append(Diagnostic(
+                "warning", "No features returned",
+                f"{ctx} answered a query but returned nothing.",
+                "The service may be empty, or it may be filtering what anonymous "
+                "users can see.",
+            ))
+        elif layer.sampled:
+            diags.append(Diagnostic(
+                "info", "Showing a sample",
+                f"{ctx} returned the first {layer.feature_count} features — Kestrel caps "
+                "how much it downloads, so the real total may be larger.",
+                "The CRS and geometry type are accurate; treat the count and extent as "
+                "a sample.",
+            ))
+
+        # A service's published extent drives 'Zoom to Layer' in every client. Compare it
+        # against the footprint measured from the features we actually downloaded.
+        pub, actual = layer.declared_wgs, layer.actual_wgs
+        if pub is not None and getattr(pub, "available", False) and actual and not layer.sampled:
+            pw = max(pub.east - pub.west, 0.0) * max(pub.north - pub.south, 0.0)
+            aw = max(actual[2] - actual[0], 0.0) * max(actual[3] - actual[1], 0.0)
+            span_km = max(actual[3] - actual[1], actual[2] - actual[0]) * 111.32
+            if aw > 0 and pw > aw * 50:
+                diags.append(Diagnostic(
+                    "warning", "Published extent is far bigger than the data",
+                    f"{ctx} advertises an extent about {pw / aw:.0f}x larger than the area "
+                    f"its features actually cover (the data spans roughly "
+                    f"{span_km:.0f} km).",
+                    "Clients use the published extent for Zoom to Layer, so it zooms to "
+                    "the wrong place. Re-calculate it in ArcGIS Online "
+                    "(item ▸ Data ▸ Update Extent).",
+                ))
+
+        if layer.crs is not None and layer.native_bounds is not None:
+            _check(diags, layer.crs, layer.native_bounds, layer.location, ctx,
+                   feature_count=layer.feature_count,
+                   geometry_type=layer.geometry_type,
+                   invalid_geometry_count=layer.invalid_geometry_count,
+                   invalid_geometry_sampled=layer.invalid_geometry_sampled,
+                   invalid_geometry_reason=layer.invalid_geometry_reason)
 
 
 def _dedupe(diags: List[Diagnostic]) -> List[Diagnostic]:
@@ -305,6 +390,11 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
             "The raster has zero width or height — nothing will draw.",
             "Re-export the raster; the source may be empty or clipped to nothing.",
         ))
+
+    # An empty layer's bounding box is meaningless — running the coordinate checks on it
+    # produced false "CRS mismatch" warnings on perfectly ordinary empty exports.
+    if feature_count == 0:
+        return
 
     # --- extent validity (stop here if there's nothing usable) ---
     if bounds is None or any(_bad(v) for v in bounds):

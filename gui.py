@@ -27,7 +27,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QInputDialog, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 from kestrel import repair
@@ -371,7 +372,12 @@ class MainWindow(QMainWindow):
         self.folder_btn = QPushButton("Open folder")
         self.folder_btn.clicked.connect(self.open_folder)
         self.folder_btn.setEnabled(False)
+        url_btn = QPushButton("Open URL…")
+        url_btn.setToolTip("Inspect an ArcGIS REST service (FeatureServer / MapServer)")
+        url_btn.clicked.connect(self.open_url)
+
         top.addWidget(browse)
+        top.addWidget(url_btn)
         top.addWidget(self.fix_btn)
         top.addStretch(1)
         top.addWidget(self.out_btn)
@@ -425,6 +431,14 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Choose a geospatial file", "", FILE_FILTER)
         if path:
             self.load_path(path)
+
+    def open_url(self):
+        url, ok = QInputDialog.getText(
+            self, "Open an ArcGIS service",
+            "Paste a FeatureServer or MapServer URL:\n"
+            "(add /0 for one specific layer)")
+        if ok and url.strip():
+            self.load_path(url.strip())
 
     def load_path(self, path: str):
         if not path:
@@ -493,7 +507,28 @@ class MainWindow(QMainWindow):
         if report.error:
             self._card("Could not read file", [("Error", report.error)], accent=SEV_COLOR["error"])
 
-        if report.is_layer_file:
+        if report.is_service:
+            head = [("Service", report.service_title or report.file_name)]
+            if report.portal_access:
+                head.append(("Sharing", report.portal_access))
+            if report.service_capabilities:
+                head.append(("Allows", report.service_capabilities))
+            self._card("ArcGIS REST service", head, accent="#7d3c98")
+            for layer in report.layers:
+                prefix = f"{layer.name} — " if len(report.layers) > 1 else ""
+                self._crs_card(prefix, layer.crs)
+                self._location_card(prefix, layer.location)
+                self._map_card(prefix, layer.location, layer.preview)
+                pairs = [("Endpoint", layer.source_path),
+                         ("Geometry", layer.geometry_type),
+                         ("Features", f"{layer.feature_count}"
+                          + (" (sample)" if layer.sampled else ""))]
+                if layer.fields:
+                    pairs.append((f"Fields ({len(layer.fields)})",
+                                  ", ".join(n for n, _ in layer.fields)))
+                self._card(prefix + "Details", pairs)
+
+        elif report.is_layer_file:
             for layer in report.layers:
                 prefix = f"{layer.name} — " if len(report.layers) > 1 else ""
                 pairs = [("Layer", layer.name)]

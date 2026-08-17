@@ -69,6 +69,12 @@ class LayerInfo:
     source_missing: Optional[bool] = None    # True when that data isn't there any more
     definition_query: Optional[str] = None   # a filter that can hide features
     visible: Optional[bool] = None           # layer turned off in the map
+    # ArcGIS REST services publish an extent that can drift from the real data:
+    declared_bounds: Optional[Tuple[float, float, float, float]] = None
+    max_record_count: Optional[int] = None   # server's per-request cap
+    sampled: Optional[bool] = None           # True when we hit our own read cap
+    declared_wgs: Optional[object] = None    # published extent as LocationInfo
+    actual_wgs: Optional[Tuple[float, float, float, float]] = None  # measured footprint
 
 
 @dataclass
@@ -110,6 +116,13 @@ class InspectionReport:
     raster: Optional[RasterInfo] = None                          # for raster
     diagnostics: List[Diagnostic] = field(default_factory=list)
     error: Optional[str] = None                    # fatal read error message
+    service_title: Optional[str] = None            # for ArcGIS REST services
+    service_capabilities: Optional[str] = None
+    portal_access: Optional[str] = None            # 'private'/'public' from a .pitemx
+
+    @property
+    def is_service(self) -> bool:
+        return self.kind == "service"
 
     @property
     def is_layer_file(self) -> bool:

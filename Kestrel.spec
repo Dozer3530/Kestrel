@@ -13,7 +13,8 @@ hiddenimports = [
     "mapview",
     "kestrel", "kestrel.inspector", "kestrel.diagnostics",
     "kestrel.models", "kestrel.textreport", "kestrel.tabular", "kestrel.repair",
-    "kestrel.crsguess", "kestrel.arcgis",
+    "kestrel.crsguess", "kestrel.arcgis", "kestrel.esri",
+    "xlrd",                      # old .xls reader; no GDAL driver exists for it
 ]
 
 # Pull data files (proj.db, GDAL data), native libraries, and submodules for the

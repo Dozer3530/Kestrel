@@ -65,6 +65,19 @@ files in the same folder that *do* declare a CRS, and the ones you've picked bef
 usual case (one file in a delivery lost its `.prj`) that's often the exactly-right answer.
 You can also type an EPSG code or search the EPSG database by name.
 
+## ArcGIS services and layer files
+
+Paste an **ArcGIS REST URL** (`Open URL…`) — a FeatureServer or MapServer, optionally with a
+layer index — and Kestrel reads it like any other layer: CRS, real-world location, geometry
+type, fields and a map preview of the actual features. Nothing is uploaded; it only issues
+GET requests to the URL you give it.
+
+It also checks something you can't see from the service page: whether the **published extent
+matches the data**. Clients use that extent for *Zoom to Layer*, so a stale one sends everyone
+to the wrong place.
+
+`.pitemx` portal-item files are followed straight through to the service they point at.
+
 ## ArcGIS Pro layer files
 
 Drop a **`.lyrx`** (or `.mapx`) on Kestrel and it follows the layer to its data. Layer files
