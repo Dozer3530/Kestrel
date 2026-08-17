@@ -91,6 +91,26 @@ def format_report_text(report: InspectionReport) -> str:
                 out.append(f"  Fields ({len(layer.fields)}):    {joined}")
             out.append("")
 
+    elif report.is_pointcloud and report.layers:
+        layer = report.layers[0]
+        out.append("POINT CLOUD")
+        out.append(f"  Points:         {layer.feature_count:,}"
+                   if layer.feature_count is not None else "  Points:         unknown")
+        if layer.z_min is not None:
+            out.append(f"  Elevation:      {layer.z_min:g} to {layer.z_max:g}")
+        if layer.point_density is not None:
+            d = layer.point_density
+            out.append("  Density:        %s points/m2"
+                       % (f"{d:.2f}" if d < 10 else f"{d:.0f}"))
+        if layer.returns:
+            out.append(f"  Returns:        "
+                       + ", ".join(f"{n:,}" for n in layer.returns))
+        out += _crs_lines(layer.crs)
+        out += _loc_lines(layer.location)
+        if layer.native_bounds and all(_ok(v) for v in layer.native_bounds):
+            out.append(f"  Native extent:  {_fmt_bounds(layer.native_bounds)}")
+        out.append("")
+
     elif report.is_service:
         if report.service_title:
             out.append(f"Service: {report.service_title}")

@@ -75,6 +75,13 @@ class LayerInfo:
     sampled: Optional[bool] = None           # True when we hit our own read cap
     declared_wgs: Optional[object] = None    # published extent as LocationInfo
     actual_wgs: Optional[Tuple[float, float, float, float]] = None  # measured footprint
+    # LAS / LAZ point clouds:
+    z_min: Optional[float] = None
+    z_max: Optional[float] = None
+    las_version: Optional[str] = None
+    point_format: Optional[int] = None
+    returns: Optional[List[int]] = None
+    point_density: Optional[float] = None    # points per m², when the CRS allows it
 
 
 @dataclass
@@ -119,6 +126,10 @@ class InspectionReport:
     service_title: Optional[str] = None            # for ArcGIS REST services
     service_capabilities: Optional[str] = None
     portal_access: Optional[str] = None            # 'private'/'public' from a .pitemx
+
+    @property
+    def is_pointcloud(self) -> bool:
+        return self.kind == "pointcloud"
 
     @property
     def is_service(self) -> bool:

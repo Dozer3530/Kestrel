@@ -9,3 +9,5 @@ rasterio==1.5.0
 PySide6==6.11.1
 openpyxl==3.1.5
 xlrd==1.2.0        # reads the old .xls format, which GDAL has no driver for
+laspy==2.7.0        # LAS/LAZ point clouds (header-only reads)
+lazrs==0.7.1        # LAZ decompression for laspy

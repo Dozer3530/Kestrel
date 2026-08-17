@@ -73,6 +73,10 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
         ))
         return diags
 
+    if report.is_pointcloud:
+        _pointcloud_diagnostics(diags, report)
+        return _dedupe(diags)
+
     if report.is_service:
         _service_diagnostics(diags, report)
         return _dedupe(diags)
@@ -134,6 +138,65 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
                empty=(r.width == 0 or r.height == 0))
 
     return diags
+
+
+def _pointcloud_diagnostics(diags: List[Diagnostic], report) -> None:
+    """LAS/LAZ checks. CRS is optional in the format, so it's missing constantly."""
+    if not report.layers:
+        return
+    layer = report.layers[0]
+
+    if not layer.crs.defined:
+        diags.append(Diagnostic(
+            "error", "No CRS defined",
+            "This point cloud doesn't record a coordinate system. LAS makes the CRS "
+            "optional, so exports from drone and scanner software often omit it.",
+            "Set it from the flight or survey record before using the cloud with other "
+            "data — nothing can line it up otherwise.",
+        ))
+
+    if layer.feature_count == 0:
+        diags.append(Diagnostic(
+            "warning", "Empty point cloud",
+            "The header reports 0 points.", "The export produced nothing usable."))
+        return
+
+    if layer.z_min is not None and layer.z_max is not None:
+        span = layer.z_max - layer.z_min
+        if span <= 0:
+            diags.append(Diagnostic(
+                "warning", "Flat elevation",
+                f"Every point sits at the same height ({layer.z_min:g}).",
+                "Z may have been dropped on export — check the source.",
+            ))
+        elif span > 9000:
+            diags.append(Diagnostic(
+                "warning", "Implausible elevation range",
+                f"Elevations run {layer.z_min:g} to {layer.z_max:g} — a span of "
+                f"{span:g} units.",
+                "That usually means noise points, or Z in different units from X/Y.",
+            ))
+        elif layer.z_min < -500:
+            diags.append(Diagnostic(
+                "info", "Elevations go below sea level",
+                f"The lowest point is {layer.z_min:g}.",
+                "Fine for some datums and mines; worth a look if unexpected.",
+            ))
+
+    if layer.point_density is not None:
+        if layer.point_density < 0.5:
+            diags.append(Diagnostic(
+                "info", "Sparse point cloud",
+                f"About {layer.point_density:.2f} points per square metre.",
+                "Thin for detailed surface work; fine for broad terrain.",
+            ))
+        else:
+            diags.append(Diagnostic(
+                "info", "Point density",
+                f"About {layer.point_density:.1f} points per square metre across the "
+                f"extent.",
+                "",
+            ))
 
 
 def _service_diagnostics(diags: List[Diagnostic], report) -> None:

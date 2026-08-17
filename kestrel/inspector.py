@@ -517,8 +517,11 @@ def inspect_path(path) -> InspectionReport:
             error="that's a folder, not a dataset — drop a file, or a .gdb geodatabase")
 
     from .arcgis import LAYER_EXTS, inspect_layer_file
+    from .pointcloud import LAS_EXTS, inspect_pointcloud
     from .tabular import TABLE_EXTS, inspect_table
-    if ext in LAYER_EXTS:
+    if ext in LAS_EXTS:
+        report = inspect_pointcloud(path, file_name, size)
+    elif ext in LAYER_EXTS:
         report = inspect_layer_file(path, file_name, size)
     elif ext in TABLE_EXTS:
         report = inspect_table(path, file_name, size, ext)
