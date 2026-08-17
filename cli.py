@@ -112,9 +112,9 @@ def _run_batch(argv) -> int:
     print("=" * 74)
     print(f"  {len(result.rows)} dataset(s) in {folder}")
     print("=" * 74)
-    order = {"error": 0, "warning": 1, "info": 2, "ok": 3}
+    order = {"error": 0, "warning": 1, "ok": 2}
     for row in sorted(result.rows, key=lambda r: order.get(r.worst, 9)):
-        flag = {"error": "[ERROR]", "warning": "[WARN] ", "info": "[info] ",
+        flag = {"error": "[ERROR]", "warning": "[WARN] ",
                 "ok": "[ ok  ]"}.get(row.worst, "       ")
         print(f"{flag} {row.name}")
         print(f"         {row.kind:10s} {row.crs:22s} {row.features}")
@@ -122,7 +122,7 @@ def _run_batch(argv) -> int:
             print(f"         {row.issues}")
     print("-" * 74)
     print(f"{counts['error']} error, {counts['warning']} warning, "
-          f"{counts['info']} info, {counts['ok']} clean")
+          f"{counts['ok']} clean")
     if result.truncated:
         print("(stopped at the scan limit)")
 

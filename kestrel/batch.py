@@ -63,14 +63,25 @@ class BatchRow:
 
     @property
     def worst(self) -> str:
-        """'error', 'warning', 'info' or 'ok' — for sorting the bad ones to the top."""
+        """'error', 'warning' or 'ok' — for sorting the bad ones to the top.
+
+        Info-level notes deliberately don't count against a file. They're context, not
+        problems, and one of them (the WGS 84 / NAD83 note) fires on nearly every North
+        American dataset — which would leave a folder reporting zero clean files.
+        """
         if self.error:
             return "error"
         diags = getattr(self.report, "diagnostics", []) or []
-        for level in ("error", "warning", "info"):
+        for level in ("error", "warning"):
             if any(d.severity == level for d in diags):
                 return level
         return "ok"
+
+    @property
+    def notes(self) -> int:
+        """How many info-level notes this file carries (shown, but not counted against it)."""
+        diags = getattr(self.report, "diagnostics", []) or []
+        return sum(1 for d in diags if d.severity == "info")
 
     @property
     def issues(self) -> str:
@@ -92,7 +103,7 @@ class BatchResult:
 
     @property
     def counts(self) -> dict:
-        out = {"error": 0, "warning": 0, "info": 0, "ok": 0}
+        out = {"error": 0, "warning": 0, "ok": 0}
         for row in self.rows:
             out[row.worst] = out.get(row.worst, 0) + 1
         return out

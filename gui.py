@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
 
     def _render_batch(self, result):
         self.clear_results()
-        order = {"error": 0, "warning": 1, "info": 2, "ok": 3}
+        order = {"error": 0, "warning": 1, "ok": 2}
         rows = sorted(result.rows, key=lambda r: (order.get(r.worst, 9), r.name))
 
         box = QGroupBox(f"Folder audit — {len(rows)} dataset(s)")
