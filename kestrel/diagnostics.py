@@ -35,6 +35,38 @@ def _looks_like_lonlat(bounds) -> bool:
     )
 
 
+def datum_shift_note(crs: CrsInfo, location) -> Optional[Diagnostic]:
+    """Warn when the datum will silently offset data by a metre or two.
+
+    WGS 84 and NAD83 are treated as interchangeable by a lot of software, but they
+    have drifted apart — by roughly 1–2 m in western Canada and growing. At survey or
+    machine-guidance precision that matters, and nothing normally tells you.
+    """
+    if not crs.defined or not crs.datum:
+        return None
+    datum = crs.datum.lower()
+    is_wgs = "world geodetic system 1984" in datum or "wgs" in datum
+    is_nad83 = "north american datum 1983" in datum or "nad83" in datum
+    if not (is_wgs or is_nad83):
+        return None
+    if not (location and location.available):
+        return None
+    lat, lon = location.center_lat, location.center_lon
+    if not (-170 <= lon <= -50 and 14 <= lat <= 84):     # North America only
+        return None
+
+    other = "NAD83" if is_wgs else "WGS 84"
+    return Diagnostic(
+        "info", "WGS 84 / NAD83 datum difference",
+        f"This data is on {crs.datum}. In North America {other} data sits roughly "
+        "1–2 m away — the two datums are often treated as identical but have drifted "
+        "apart, and the gap grows over time.",
+        "Harmless for mapping at field scale. If you're combining this with survey, "
+        "RTK or machine-guidance data, convert deliberately rather than assuming the "
+        "two line up.",
+    )
+
+
 def _is_linear_unit(unit: str) -> bool:
     """True for any linear ground unit (metre, foot, chain...), false for degrees.
 
@@ -136,8 +168,46 @@ def run_diagnostics(report: InspectionReport) -> List[Diagnostic]:
         r = report.raster
         _check(diags, r.crs, r.native_bounds, r.location, "raster",
                empty=(r.width == 0 or r.height == 0))
+        _raster_performance(diags, r)
 
     return diags
+
+
+def _raster_performance(diags: List[Diagnostic], raster) -> None:
+    """Why a big ortho crawls in QGIS: no overviews, not tiled, no compression."""
+    pixels = (raster.width or 0) * (raster.height or 0)
+    big = pixels > 25_000_000            # ~5000 x 5000 and up
+
+    if big and raster.overview_levels is not None and not raster.overview_levels:
+        diags.append(Diagnostic(
+            "warning", "No overviews (pyramids)",
+            f"This is a {raster.width} x {raster.height} raster with no overviews, so "
+            "every redraw reads full-resolution pixels.",
+            "It will feel painfully slow zoomed out. Build them in QGIS "
+            "(Raster ▸ Miscellaneous ▸ Build Overviews) or with gdaladdo.",
+        ))
+    if big and raster.tiled is False:
+        diags.append(Diagnostic(
+            "info", "Not internally tiled",
+            "The raster is stored in strips rather than tiles, so reading a small area "
+            "still pulls whole rows.",
+            "Re-writing it as a Cloud Optimized GeoTIFF (tiled, with overviews) makes "
+            "panning and zooming much faster.",
+        ))
+    if big and raster.compression is None:
+        diags.append(Diagnostic(
+            "info", "Uncompressed",
+            "No compression is set, so this file is larger on disk and slower to read "
+            "than it needs to be.",
+            "LZW or DEFLATE are lossless and usually shrink imagery a lot.",
+        ))
+    if raster.nodata is None and raster.band_count and raster.band_count <= 2:
+        diags.append(Diagnostic(
+            "info", "No NoData value set",
+            "Nothing marks which pixels are empty, so blank edges are drawn as real "
+            "values (often solid black or white).",
+            "Set a NoData value if the raster has padding around its data.",
+        ))
 
 
 def _pointcloud_diagnostics(diags: List[Diagnostic], report) -> None:
@@ -576,6 +646,10 @@ def _check(diags: List[Diagnostic], crs: CrsInfo, bounds, location: LocationInfo
                 "Common near the International Date Line; it can make the layer render as a "
                 "stripe across the whole map. Check for coordinates on both sides of ±180.",
             ))
+
+    note = datum_shift_note(crs, location)
+    if note is not None:
+        diags.append(note)
 
     # --- informational geometry notes ---
     if geometry_type:

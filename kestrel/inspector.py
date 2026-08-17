@@ -430,6 +430,24 @@ def _inspect_zipped(path: str, file_name: str, size: Optional[int]) -> Inspectio
 # --------------------------------------------------------------------------- #
 # Raster
 # --------------------------------------------------------------------------- #
+def _cog_status(ds):
+    """(is_tiled, overview_levels, compression) — the ingredients of a usable COG."""
+    try:
+        tiled = bool(ds.profile.get("tiled", False))
+    except Exception:
+        tiled = False
+    try:
+        levels = list(ds.overviews(1))
+    except Exception:
+        levels = []
+    try:
+        compression = ds.profile.get("compress")
+        compression = str(compression).upper() if compression else None
+    except Exception:
+        compression = None
+    return tiled, levels, compression
+
+
 def _inspect_raster(path: str, file_name: str, size: Optional[int],
                     source: Optional[str] = None) -> InspectionReport:
     src = source or path
@@ -443,6 +461,7 @@ def _inspect_raster(path: str, file_name: str, size: Optional[int],
     try:
         with rasterio.open(_gdal_path(src)) as ds:
             crs_info, crs_obj = _parse_crs(ds.crs.to_wkt() if ds.crs else None)
+            cog = _cog_status(ds)
             b = ds.bounds
             bounds = (float(b.left), float(b.bottom), float(b.right), float(b.top))
             res = ds.res
@@ -459,6 +478,9 @@ def _inspect_raster(path: str, file_name: str, size: Optional[int],
                 crs=crs_info,
                 location=bounds_to_wgs84(bounds, crs_obj),
             )
+            raster.tiled = cog[0]
+            raster.overview_levels = cog[1]
+            raster.compression = cog[2]
             driver = ds.driver
     except Exception as exc:
         return InspectionReport(

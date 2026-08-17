@@ -98,6 +98,9 @@ class RasterInfo:
     native_bounds: Optional[Tuple[float, float, float, float]]
     crs: CrsInfo
     location: LocationInfo
+    tiled: Optional[bool] = None             # internally tiled (a COG requirement)
+    overview_levels: Optional[List[int]] = None
+    compression: Optional[str] = None
 
 
 @dataclass
