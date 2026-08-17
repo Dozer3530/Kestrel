@@ -16,6 +16,7 @@ hiddenimports = [
     "kestrel.crsguess", "kestrel.arcgis", "kestrel.esri",
     "xlrd",                      # old .xls reader; no GDAL driver exists for it
     "kestrel.pointcloud", "laspy", "lazrs",      # LAS / LAZ point clouds
+    "kestrel.batch",                             # folder auditing
 ]
 
 # Pull data files (proj.db, GDAL data), native libraries, and submodules for the
