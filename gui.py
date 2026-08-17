@@ -932,9 +932,19 @@ def _selftest():
         lines.append("crs suggestions OK (%d candidate(s), search resolves EPSG:26911)"
                      % len(cands))
 
-        # Excel path (openpyxl must actually be bundled, not silently missing).
+        # Spreadsheet readers must actually be bundled, not silently missing — a frozen
+        # build without these fails only when a user happens to open a spreadsheet.
         import openpyxl
-        lines.append("openpyxl %s present" % openpyxl.__version__)
+        import xlrd
+        lines.append("spreadsheet readers OK (openpyxl %s, xlrd %s)"
+                     % (openpyxl.__version__, xlrd.__version__))
+
+        # ArcGIS service + layer-file readers.
+        from kestrel.arcgis import LAYER_EXTS
+        from kestrel.esri import is_service_url
+        assert is_service_url("https://x/arcgis/rest/services/A/FeatureServer/0")
+        lines.append("arcgis readers OK (layer files: %s)"
+                     % ", ".join(sorted(LAYER_EXTS)))
 
         # The mini-map asset has to ship or the map card renders empty.
         import gui as _self
