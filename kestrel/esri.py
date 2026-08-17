@@ -95,8 +95,8 @@ def _read_features(base: str, layer_id: int, crs_obj):
         import pyogrio
 
         info = pyogrio.read_info(source)
-        (_inv, _n, _reason), preview = _sample_geometry(source, None, crs_obj,
-                                                        MAX_PREVIEW_FEATURES)
+        (_inv, _n, _reason), preview, _bounds = _sample_geometry(
+            source, None, crs_obj, MAX_PREVIEW_FEATURES)
         return info, preview
     except Exception:
         return None, None

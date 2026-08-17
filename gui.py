@@ -190,9 +190,9 @@ class DropArea(QFrame):
 
     def dropEvent(self, event):
         self._style(False)
-        urls = event.mimeData().urls()
-        if urls:
-            self.on_path(urls[0].toLocalFile())
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.toLocalFile()]
+        if paths:
+            self.on_path(paths[0])          # folders (.gdb) are handled downstream
 
 
 # --------------------------------------------------------------------------- #

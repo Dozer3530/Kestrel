@@ -32,7 +32,13 @@ RASTER_EXTS = {
 VECTOR_EXTS = {
     ".shp", ".gpkg", ".geojson", ".json", ".kml", ".gml", ".gpx",
     ".tab", ".mif", ".fgb", ".sqlite", ".geojsonl", ".gdb",
+    # more drivers GDAL already ships with — routing them costs nothing
+    ".dxf",                      # CAD: never carries a CRS, which is the whole point
+    ".topojson", ".osm", ".pbf", ".pmtiles", ".mvt", ".gmt", ".dgn", ".map",
 }
+
+# Datasets that are a folder rather than a file.
+DIR_EXTS = {".gdb", ".gpkg.zip"}
 
 
 # --------------------------------------------------------------------------- #
@@ -130,6 +136,30 @@ def bounds_to_wgs84(bounds, crs_obj: Optional[CRS]) -> LocationInfo:
 # --------------------------------------------------------------------------- #
 # Vector
 # --------------------------------------------------------------------------- #
+def _looks_like_gdb(path) -> bool:
+    """A File Geodatabase is a folder full of gdbtable files."""
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return False
+    return any(n.lower().endswith((".gdbtable", ".gdbindexes")) for n in names)
+
+
+def _dir_size(path, cap: int = 4000) -> Optional[int]:
+    total = 0
+    try:
+        for n, name in enumerate(os.listdir(path)):
+            if n >= cap:
+                break
+            try:
+                total += os.path.getsize(os.path.join(path, name))
+            except OSError:
+                pass
+    except OSError:
+        return None
+    return total
+
+
 def _gdal_path(p):
     r"""A path GDAL can open even with awkward characters (e.g. ';' in the name).
 
@@ -160,10 +190,15 @@ def _read_layer_info(source: str, layer_name: Optional[str]) -> Tuple[LayerInfo,
     dtypes = [str(d) for d in raw_dtypes] if raw_dtypes is not None else []
     fields = list(zip(names, dtypes)) if len(names) == len(dtypes) else [(n, "") for n in names]
 
+    # Some drivers return -1 for "I'd have to scan the whole file to tell you".
+    count = info.get("features")
+    if count is not None and int(count) < 0:
+        count = None
+
     layer = LayerInfo(
         name=layer_name or info.get("layer_name") or "(default)",
         geometry_type=info.get("geometry_type"),
-        feature_count=info.get("features"),
+        feature_count=count,
         fields=fields,
         native_bounds=bounds,
         crs=crs_info,
@@ -174,12 +209,18 @@ def _read_layer_info(source: str, layer_name: Optional[str]) -> Tuple[LayerInfo,
     # WGS84 preview so the map can draw the real features rather than a box around them.
     gt = info.get("geometry_type") or ""
     if gt:
-        (inv, sampled, reason), preview = _sample_geometry(source, layer_name, crs_obj)
+        (inv, sampled, reason), preview, sample_bounds = _sample_geometry(
+            source, layer_name, crs_obj)
         if "Point" not in gt:
             layer.invalid_geometry_count = inv
             layer.invalid_geometry_sampled = sampled
             layer.invalid_geometry_reason = reason
         layer.preview = preview
+        if layer.native_bounds is None and sample_bounds:
+            layer.native_bounds = sample_bounds
+            layer.location = bounds_to_wgs84(sample_bounds, crs_obj)
+        if layer.feature_count is None and sampled:
+            layer.feature_count = sampled
 
     return layer, info.get("driver")
 
@@ -200,11 +241,11 @@ def _sample_geometry(source, layer_name, crs_obj, max_features: int = 2000):
                         max_features=max_features)
         geom_wkb = res[2]
         if geom_wkb is None:
-            return empty, None
+            return empty, None, None
         geoms = shapely.from_wkb(geom_wkb)
         present = [g for g in geoms if g is not None]
         if not present:
-            return (0, 0, None), None
+            return (0, 0, None), None, None
 
         valid = shapely.is_valid(present)
         invalid_idx = [i for i, ok in enumerate(valid) if not ok]
@@ -215,9 +256,24 @@ def _sample_geometry(source, layer_name, crs_obj, max_features: int = 2000):
             except Exception:
                 reason = None
         validity = (len(invalid_idx), len(present), reason)
-        return validity, _build_preview(present, crs_obj)
+
+        # Some drivers (DXF especially) don't report an extent or a feature count without
+        # a full scan. We've already read geometry, so measure it here rather than
+        # reporting an "invalid extent" that isn't.
+        try:
+            import numpy as np
+
+            all_bounds = shapely.bounds(np.asarray(present, dtype=object))
+            sample_bounds = (float(np.nanmin(all_bounds[:, 0])),
+                             float(np.nanmin(all_bounds[:, 1])),
+                             float(np.nanmax(all_bounds[:, 2])),
+                             float(np.nanmax(all_bounds[:, 3])))
+        except Exception:
+            sample_bounds = None
+
+        return validity, _build_preview(present, crs_obj), sample_bounds
     except Exception:
-        return empty, None
+        return empty, None, None
 
 
 def _build_preview(geoms, crs_obj, vertex_budget: int = 12000):
@@ -448,6 +504,17 @@ def inspect_path(path) -> InspectionReport:
         )
 
     ext = os.path.splitext(path)[1].lower()
+
+    # A File Geodatabase is a directory, so it needs handling before the file routing.
+    if os.path.isdir(path):
+        if ext in DIR_EXTS or _looks_like_gdb(path):
+            report = _inspect_vector(path, file_name, _dir_size(path))
+            from .diagnostics import run_diagnostics
+            report.diagnostics = run_diagnostics(report)
+            return report
+        return InspectionReport(
+            path=path, file_name=file_name, size_bytes=None, kind="unknown", driver=None,
+            error="that's a folder, not a dataset — drop a file, or a .gdb geodatabase")
 
     from .arcgis import LAYER_EXTS, inspect_layer_file
     from .tabular import TABLE_EXTS, inspect_table
