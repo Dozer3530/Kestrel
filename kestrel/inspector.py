@@ -27,7 +27,23 @@ from .models import (
 # vector first (pyogrio), then raster as a fallback, so unknown types still work.
 RASTER_EXTS = {
     ".tif", ".tiff", ".img", ".vrt", ".jp2", ".asc", ".dem", ".bil",
-    ".bsq", ".bip", ".ecw", ".sid", ".hgt", ".nc", ".grd",
+    ".bsq", ".bip", ".hgt", ".nc", ".nc4", ".grd",
+    # weather and model output — GRIB is everywhere in agriculture
+    ".grib", ".grib2", ".grb", ".grb2",
+    # scientific containers and elevation formats GDAL already reads
+    ".h5", ".hdf5", ".he5", ".xyz", ".dt0", ".dt1", ".dt2",
+    ".ers", ".rst", ".sdat", ".bt", ".ntf", ".nitf", ".pix",
+    # plain images: georeferenced by a world file (.pgw/.jgw) or ignored
+    ".png", ".jpg", ".jpeg", ".gif", ".webp",
+}
+
+# Formats GDAL knows the name of but has no driver compiled for here. Routing them
+# straight to a raster read produces a baffling "not recognized" error, so they get
+# an explanation instead.
+UNLICENSED_EXTS = {
+    ".ecw": "ECW",
+    ".sid": "MrSID",
+    ".jp2k": "JPEG2000 (licensed)",
 }
 VECTOR_EXTS = {
     ".shp", ".gpkg", ".geojson", ".json", ".kml", ".gml", ".gpx",
@@ -35,6 +51,9 @@ VECTOR_EXTS = {
     # more drivers GDAL already ships with — routing them costs nothing
     ".dxf",                      # CAD: never carries a CRS, which is the whole point
     ".topojson", ".osm", ".pbf", ".pmtiles", ".mvt", ".gmt", ".dgn", ".map",
+    ".pdf",                      # GeoPDF: land and ag maps are handed round as these
+    ".e00",                      # ArcInfo interchange, still lurking in old archives
+    ".jml", ".georss", ".gtm", ".000", ".ods",
 }
 
 # Datasets that are a folder rather than a file.
@@ -541,7 +560,14 @@ def inspect_path(path) -> InspectionReport:
     from .arcgis import LAYER_EXTS, inspect_layer_file
     from .pointcloud import LAS_EXTS, inspect_pointcloud
     from .tabular import TABLE_EXTS, inspect_table
-    if ext in LAS_EXTS:
+    if ext in UNLICENSED_EXTS:
+        report = InspectionReport(
+            path=path, file_name=file_name, size_bytes=size, kind="unknown",
+            driver=UNLICENSED_EXTS[ext],
+            error=f"{UNLICENSED_EXTS[ext]} files need a licensed driver that isn't "
+                  "bundled here. Convert to GeoTIFF (in QGIS: right-click the layer "
+                  "in a project ▸ Export ▸ Save As) and Kestrel can read it.")
+    elif ext in LAS_EXTS:
         report = inspect_pointcloud(path, file_name, size)
     elif ext in LAYER_EXTS:
         report = inspect_layer_file(path, file_name, size)

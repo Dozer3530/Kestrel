@@ -19,7 +19,11 @@ from .pointcloud import LAS_EXTS
 from .tabular import TABLE_EXTS
 
 # Everything worth opening. Shapefile sidecars are skipped so one dataset is one row.
-SCAN_EXTS = (VECTOR_EXTS | RASTER_EXTS | TABLE_EXTS | LAYER_EXTS | LAS_EXTS | {".zip", ".kmz"})
+# Plain images can be georeferenced by a world file, so they're openable — but a folder
+# scan shouldn't turn every screenshot and logo into a row.
+_NOT_WORTH_SCANNING = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".json", ".pdf"}
+SCAN_EXTS = ((VECTOR_EXTS | RASTER_EXTS | TABLE_EXTS | LAYER_EXTS | LAS_EXTS
+              | {".zip", ".kmz"}) - _NOT_WORTH_SCANNING)
 _SIDECARS = {".shx", ".dbf", ".prj", ".cpg", ".sbn", ".sbx", ".qix", ".aux", ".xml",
              ".ovr", ".idx", ".qpj", ".atx", ".lock"}
 MAX_FILES = 2000
