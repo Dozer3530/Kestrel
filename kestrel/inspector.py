@@ -420,7 +420,32 @@ def _inspect_zipped(path: str, file_name: str, size: Optional[int]) -> Inspectio
         )
 
     zip_uri = path.replace("\\", "/")
-    shp = next((n for n in names if n.lower().endswith(".shp")), None)
+
+    def _best(candidates):
+        """Pick the most substantial entry, not merely the first in archive order.
+
+        Ortho and lidar deliveries ship a browse/quicklook thumbnail alongside the real
+        data; taking names[0] let a 16x16 browse.png win over the actual GeoTIFF."""
+        ranked = []
+        for n in candidates:
+            base = os.path.basename(n).lower()
+            demoted = any(w in base for w in
+                          ("browse", "thumb", "quicklook", "preview", "overview", "_ql"))
+            try:
+                size = zf_sizes.get(n, 0)
+            except Exception:
+                size = 0
+            ranked.append((demoted, -size, n))
+        ranked.sort()
+        return ranked[0][2] if ranked else None
+
+    try:
+        with zipfile.ZipFile(path) as _zf:
+            zf_sizes = {i.filename: i.file_size for i in _zf.infolist()}
+    except Exception:
+        zf_sizes = {}
+
+    shp = _best([n for n in names if n.lower().endswith(".shp")])
 
     if shp:
         stem = shp[:-4].lower()
@@ -430,15 +455,11 @@ def _inspect_zipped(path: str, file_name: str, size: Optional[int]) -> Inspectio
             layer.has_prj = has_prj
         return report
 
-    other = next(
-        (n for n in names if os.path.splitext(n)[1].lower() in VECTOR_EXTS), None
-    )
+    other = _best([n for n in names if os.path.splitext(n)[1].lower() in VECTOR_EXTS])
     if other:
         return _inspect_vector(path, file_name, size, source=f"/vsizip/{zip_uri}/{other}")
 
-    rast = next(
-        (n for n in names if os.path.splitext(n)[1].lower() in RASTER_EXTS), None
-    )
+    rast = _best([n for n in names if os.path.splitext(n)[1].lower() in RASTER_EXTS])
     if rast:
         return _inspect_raster(path, file_name, size, source=f"/vsizip/{zip_uri}/{rast}")
 

@@ -197,11 +197,19 @@ def _geometry_type_for(geoms, fallback):
     if not present.any():
         return fallback or "Unknown", False
     ids = {int(i) for i in shapely.get_type_id(geoms[present])}
+    # Keep the Z/M suffix. Without it a LINESTRING Z layer is declared plain LineString
+    # and every elevation is silently dropped on write.
+    suffix = ""
+    try:
+        if bool(shapely.has_z(geoms[present]).any()):
+            suffix = " Z"
+    except Exception:
+        pass
     if len(ids) == 1:
-        return _TYPE_NAMES.get(ids.pop(), fallback or "Unknown"), False
+        return _TYPE_NAMES.get(ids.pop(), fallback or "Unknown") + suffix, False
     families = {_MULTI_OF.get(i) for i in ids}
     if len(families) == 1 and None not in families:
-        return _TYPE_NAMES[families.pop()], True              # mixed single/multi -> promote
+        return _TYPE_NAMES[families.pop()] + suffix, True     # mixed single/multi -> promote
     return "Unknown", False
 
 
@@ -297,6 +305,18 @@ def plan_repair(report, operation: str, out_dir: str, *, layer=None, epsg=None,
     if note:
         warnings.append(note)
     stem = stem or os.path.splitext(os.path.basename(src))[0]
+
+    if len(report.layers or []) > 1 and operation != TABLE_TO_POINTS:
+        others = ", ".join(l.name for l in report.layers[1:])
+        warnings.append(
+            f"This dataset has {len(report.layers)} layers and only "
+            f"'{report.layers[0].name}' will be written. Not included: {others}.")
+
+    if report.is_pointcloud:
+        return blocked("Kestrel can't rewrite LAS/LAZ point clouds — set the CRS with "
+                       "lasinfo or PDAL, or re-export from the software that made it")
+    if report.is_raster and operation in (ASSIGN_CRS, FIX_GEOMETRY, TABLE_TO_POINTS):
+        return blocked("that only applies to vector data — this is a raster")
 
     if report.is_service and operation == ASSIGN_CRS:
         return blocked("a service already declares its CRS — use Reproject or Convert "
@@ -597,6 +617,24 @@ def _read_table_rows(path, xcol, ycol):
                     continue
         finally:
             wb.close()
+        return out
+
+    if ext == ".xls":
+        import xlrd
+
+        book = xlrd.open_workbook(path)
+        try:
+            sheet = book.sheet_by_index(0)
+            header = [str(v).strip().lower() for v in sheet.row_values(0)]
+            xi, yi = header.index(xcol.strip().lower()), header.index(ycol.strip().lower())
+            for r in range(1, sheet.nrows):
+                row = sheet.row_values(r)
+                try:
+                    out.append((float(row[xi]), float(row[yi])))
+                except (TypeError, ValueError, IndexError):
+                    continue
+        finally:
+            book.release_resources()
         return out
 
     from .tabular import _open_text_table

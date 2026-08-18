@@ -104,6 +104,7 @@ class BatchResult:
     rows: List[BatchRow] = field(default_factory=list)
     skipped: int = 0
     truncated: bool = False
+    cancelled: bool = False        # the user stopped it; results are partial
 
     @property
     def counts(self) -> dict:
@@ -149,13 +150,23 @@ def scan_folder(folder: str, recursive: bool = True,
     ``progress(done, total, name)`` may return False to cancel; ``on_found`` reports
     progress during the initial folder walk.
     """
-    paths = find_datasets(folder, recursive, on_found)
-    result = BatchResult(folder=folder, truncated=len(paths) >= MAX_FILES)
+    cancelled_during_walk = {"yes": False}
+
+    def _walk_progress(n):
+        keep = True if on_found is None else on_found(n)
+        if keep is False:
+            cancelled_during_walk["yes"] = True
+        return keep
+
+    paths = find_datasets(folder, recursive, _walk_progress)
+    result = BatchResult(folder=folder, truncated=len(paths) >= MAX_FILES,
+                         cancelled=cancelled_during_walk["yes"])
     total = len(paths)
 
     for i, path in enumerate(paths, 1):
         name = os.path.relpath(path, folder)
         if progress is not None and progress(i, total, name) is False:
+            result.cancelled = True
             break
         row = BatchRow(path=path, name=name)
         try:

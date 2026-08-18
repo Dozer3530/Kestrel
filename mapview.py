@@ -358,9 +358,17 @@ class ExtentView(QWidget):
         self.update()
 
     def _window(self, w, h):
-        west, south, east, north = self.box
+        # Clamp to the real lon/lat domain first. A file whose .prj claims EPSG:4326 while
+        # its coordinates are in metres produces an "available" location in the millions;
+        # without this the spans below explode and the graticule loop runs for minutes.
+        west, south, east, north = (max(min(v, limit), -limit) for v, limit in
+                                    zip(self.box, (180.0, 90.0, 180.0, 90.0)))
+        if east < west:
+            west, east = east, west
+        if north < south:
+            south, north = north, south
         clat = max(min((south + north) / 2.0, 85.0), -85.0)
-        clon = (west + east) / 2.0
+        clon = max(min((west + east) / 2.0, 180.0), -180.0)
         cos_lat = max(math.cos(math.radians(clat)), 0.05)
 
         floor = self.MIN_SPAN_SATELLITE if self.satellite else self.MIN_SPAN_OFFLINE
@@ -548,6 +556,9 @@ class ExtentView(QWidget):
         span = max(right - left, top - bottom)
         step = next((s for s in (30, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01)
                      if span / s >= 3), 0.01)
+        # Never draw more than ~40 lines per axis, whatever the span. The ladder above
+        # bottoms out at 30 degrees, so a runaway extent would otherwise loop forever.
+        step = max(step, span / 40.0) if span > 0 else step
         p.setPen(QPen(GRID, 1))
         font = QFont()
         font.setPointSize(7)

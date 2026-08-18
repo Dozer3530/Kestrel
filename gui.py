@@ -484,8 +484,8 @@ class MainWindow(QMainWindow):
 
         if not result.rows:
             QMessageBox.information(
-                self, "Nothing to check",
-                f"No geospatial data found in:\n{folder}")
+                self, "Audit cancelled" if result.cancelled else "Nothing to check",
+                ("Stopped before anything was checked." if result.cancelled else f"No geospatial data found in:\n{folder}"))
             return
 
         self.batch_result = result
@@ -494,8 +494,9 @@ class MainWindow(QMainWindow):
         self.fix_btn.setEnabled(False)
         self.folder_btn.setEnabled(True)
         counts = result.counts
+        partial = ("  (cancelled - partial)" if result.cancelled else "  (hit the scan limit)" if result.truncated else "")
         self.status.setText(
-            f"{len(result.rows)} dataset(s) in {folder}   ·   "
+            f"{len(result.rows)} dataset(s) in {folder}{partial}   ·   "
             f"{counts['error']} error, {counts['warning']} warning, {counts['ok']} clean")
         self._render_batch(result)
 
@@ -608,12 +609,16 @@ class MainWindow(QMainWindow):
         self.status.setText(f"{report.file_name}   ·   {report.kind}{driver}")
         self.copy_btn.setEnabled(True)
         self.folder_btn.setEnabled(True)
-        self.fix_btn.setEnabled(not report.error)
+        self.fix_btn.setEnabled(not report.error and not report.is_pointcloud)
         self.render(report)
 
     @Slot(str)
     def show_error(self, message: str):
         self.clear_results()
+        # Drop the previous report, or Fix/Convert would silently act on the old file.
+        self.current_report = None
+        self.copy_btn.setEnabled(False)
+        self.fix_btn.setEnabled(False)
         self.status.setText("Failed to inspect file.")
         self._card("Error", [("Details", message)], accent=SEV_COLOR["error"])
 
@@ -647,7 +652,29 @@ class MainWindow(QMainWindow):
         if report.error:
             self._card("Could not read file", [("Error", report.error)], accent=SEV_COLOR["error"])
 
-        if report.is_service:
+        if report.is_pointcloud and report.layers:
+            layer = report.layers[0]
+            self._crs_card("", layer.crs)
+            self._location_card("", layer.location)
+            self._map_card("", layer.location, layer.preview)
+            pairs = [("Points", f"{layer.feature_count:,}"
+                      if layer.feature_count is not None else "unknown")]
+            if layer.z_min is not None:
+                pairs.append(("Elevation", f"{layer.z_min:g} to {layer.z_max:g}"))
+            if layer.point_density is not None:
+                d = layer.point_density
+                pairs.append(("Density", (f"{d:.2f}" if d < 10 else f"{d:.0f}")
+                              + " points/m²"))
+            if layer.returns:
+                pairs.append(("Returns", ", ".join(f"{n:,}" for n in layer.returns)))
+            if layer.las_version:
+                pairs.append(("LAS version", f"{layer.las_version} "
+                              f"(point format {layer.point_format})"))
+            if layer.native_bounds and not _has_nan(layer.native_bounds):
+                pairs.append(("Native extent", _fmt_bounds(layer.native_bounds)))
+            self._card("Point cloud", pairs)
+
+        elif report.is_service:
             head = [("Service", report.service_title or report.file_name)]
             if report.portal_access:
                 head.append(("Sharing", report.portal_access))
@@ -845,7 +872,8 @@ class MainWindow(QMainWindow):
                 fix.setStyleSheet("color: #566573; font-style: italic; border: none; background: transparent;")
                 il.addWidget(fix)
             operation = FIXABLE.get(d.title)
-            if operation and self.current_report is not None:
+            if (operation and self.current_report is not None
+                    and not self.current_report.is_pointcloud):
                 btn = QPushButton(FIX_LABEL.get(operation, "Fix…"))
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.setStyleSheet(

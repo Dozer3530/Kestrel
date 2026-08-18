@@ -82,20 +82,33 @@ def _as_dict(report):
 
 
 def _run_batch(argv) -> int:
-    from kestrel.batch import scan_folder, to_csv, to_html
+    from kestrel.batch import MAX_FILES, scan_folder, to_csv, to_html
 
     folder = None
     csv_out = html_out = None
     recursive = "--no-recurse" not in argv
-    it = iter(range(len(argv)))
-    for i in it:
+
+    # Walk with an explicit index and consume each flag's value, so a missing value
+    # can't silently swallow the next flag (or the folder itself).
+    takes_value = {"--batch": "folder", "--csv": "csv", "--html": "html"}
+    i = 0
+    while i < len(argv):
         arg = argv[i]
-        if arg == "--batch" and i + 1 < len(argv):
-            folder = argv[i + 1]
-        elif arg == "--csv" and i + 1 < len(argv):
-            csv_out = argv[i + 1]
-        elif arg == "--html" and i + 1 < len(argv):
-            html_out = argv[i + 1]
+        if arg in takes_value:
+            if i + 1 >= len(argv) or argv[i + 1].startswith("-"):
+                print(f"{arg} needs a value")
+                return 2
+            value = argv[i + 1]
+            if takes_value[arg] == "folder":
+                folder = value
+            elif takes_value[arg] == "csv":
+                csv_out = value
+            else:
+                html_out = value
+            i += 2
+            continue
+        i += 1
+
     if not folder or not os.path.isdir(folder):
         print(f"not a folder: {folder}")
         return 2
@@ -123,8 +136,10 @@ def _run_batch(argv) -> int:
     print("-" * 74)
     print(f"{counts['error']} error, {counts['warning']} warning, "
           f"{counts['ok']} clean")
+    if result.cancelled:
+        print("(cancelled - these results are partial)")
     if result.truncated:
-        print("(stopped at the scan limit)")
+        print(f"(stopped at the scan limit of {MAX_FILES} datasets)")
 
     if csv_out:
         print("wrote", to_csv(result, csv_out))
