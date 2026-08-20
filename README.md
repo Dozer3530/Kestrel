@@ -121,6 +121,19 @@ infers the CRS), **LAS / LAZ point clouds** (header-only, so it's instant on hug
 **rasters** via rasterio (**GeoTIFF**, IMG, VRT, JPEG2000, …). Unknown extensions are tried as
 vector first, then raster, so most things just work.
 
+## User guide
+
+A full **[User Guide](docs/Kestrel-User-Guide.docx)** (Word, 27 pages) covers everything from
+installing to every feature, with screenshots and a complete reference for all ~48 checks.
+It's a `.docx` so you can edit it for your own team before handing it round.
+
+Regenerate it after a UI change with:
+
+```
+py docs/make_screenshots.py    REM refresh the screenshots
+node docs/build_userguide.js   REM rebuild the document
+```
+
 ## Getting it
 
 ### Download (recommended)
